@@ -89,19 +89,12 @@ public class PostServiceImpl implements PostService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 사용자를 찾을 수 없습니다. id=" + userId));
 
-        // ModelMapper는 DTO에 없는 필드는 자동으로 채워주지 않으므로, status와 같은 기본값이나 연관관계는 수동으로 설정해야
         // 1-1. DTO를 Post 엔티티로 변환 후 저장
         Post post = modelMapper.map(requestDto, Post.class);
 
         post.setUser(user); // 연관관계 설정
-            // post.setStatus(Status.ACTIVE); // Post 엔티티에 @Builder.Default가 없으면 이 코드가 필요할 수 있습니다.
-            // PostCreateRequestDto.toEntity() 에서는 status를 ACTIVE로 설정했었음.
-            // modelMapper는 status 필드가 DTO에 없으므로 null로 설정할 수 있으니 주의.
-            // Post 엔티티의 status 필드 선언부에 @Builder.Default와 함께 초기값을 주면 이 문제는 해결됩니다.
-            // @Builder.Default private Status status = Status.ACTIVE;
-        Post savedPost = postRepository.save(post);
 
-        log.info("Saved Post: {}, Author: {}", savedPost.getId(), user.getName());
+        Post savedPost = postRepository.save(post);
 
         if (images != null && !images.isEmpty()) {
             for (MultipartFile imageFile : images) {
@@ -115,11 +108,9 @@ public class PostServiceImpl implements PostService {
                             .imageUrl(storedFilename)
                             .build();
 
-                    // 2-3. 연관관계 설정 (Post -> Image)
                     savedPost.addImage(image);
 
-                    // 2-4. Image 엔티티 저장 (Post에 Cascade 설정이 되어 있지만, 명시적으로 저장하는 것이 안전할 수 있음)
-                    // CascadeType.ALL 이므로 Post 저장 시 Image도 함께 저장됩니다.
+
 
                 }
             }

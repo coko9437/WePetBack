@@ -64,7 +64,7 @@ public class PostRepositoryCustomImpl implements PostRepositoryCustom {
             booleanBuilder.and(post.lostTime.loe(criteria.getLostTimeTo()));
         }
 
-        // 쿼리 생성 (N+1 문제 방지를 위해 fetchJoin 유지)
+        // ✅ pageable 객체로부터 페이징 정보(offset, limit)를 얻어 쿼리에 적용
         JPAQuery<Post> query = queryFactory.selectFrom(post)
                 .leftJoin(post.user).fetchJoin()
                 .where(booleanBuilder)
@@ -74,7 +74,7 @@ public class PostRepositoryCustomImpl implements PostRepositoryCustom {
 
         List<Post> content = query.fetch();
 
-        // 전체 카운트 쿼리
+        // ✅ 전체 데이터 개수 카운트 쿼리 (페이지네이션 계산용)
         JPAQuery<Long> countQuery = queryFactory.select(post.count())
                 .from(post)
                 .where(booleanBuilder);

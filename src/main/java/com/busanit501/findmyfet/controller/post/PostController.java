@@ -25,8 +25,10 @@ public class PostController {
 
     // 1 게시글 목록 조회(페이징처리 + 상세 검색기능)
     // [수정] PageRequestDto -> FindPetSearchCriteria로 변경하고 @ModelAttribute 추가
+
     @GetMapping
-    public ResponseEntity<PageResponseDto<PostListResponseDto>> getPostList(@Valid @ModelAttribute FindPetSearchCriteria criteria) {
+    public ResponseEntity<PageResponseDto<PostListResponseDto>> getPostList(
+            @Valid @ModelAttribute FindPetSearchCriteria criteria) {
         PageResponseDto<PostListResponseDto> response = postService.findAllPosts(criteria);
         return ResponseEntity.ok(response);
     }
@@ -46,9 +48,9 @@ public class PostController {
             @RequestPart(value = "images", required = false) List<MultipartFile> images,
             @AuthenticationPrincipal UserDetailsImpl userDetails) { // TODO: Security 연동 후 주석 해제
         Long userId = userDetails.getUser().getUserId(); // TODO: Security 연동 후 이 코드로 교체
-        // Long tempUserId = 1L; // <<<<<<<<<<<<<<<<<<<< 임시 사용자 ID (테스트용) 연동완료시 삭제해도 무방
 
         Long postId = postService.createPost(requestDto, images, userId);
+
         return ResponseEntity.status(HttpStatus.CREATED).body("게시글이 성공적으로 등록되었습니다. ID: " + postId);
     }
 

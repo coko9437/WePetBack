@@ -1,0 +1,3381 @@
+250901 프론트엔드
+우선 설치할 yarn 패키지야.
+yarn add axios bootstrap react react-bootstrap react-dom  react-router-dom recharts  socket.io-client
+
+
+//========================
+-main.jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import './index.css'
+import App from './App.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
+
+
+createRoot(document.getElementById('root')).render(
+    <StrictMode>
+        <AuthProvider>
+            <BrowserRouter>
+                <App />
+            </BrowserRouter>
+        </AuthProvider>
+    </StrictMode>,
+)
+//========================
+-App.jsx
+import React from 'react';
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import MainLayout from "./layouts/MainLayout";
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
+import ProfilePage from './pages/user/ProfilePage';
+import SearchFilterPage from './pages/search_filter/SearchFilterPage';
+import BoardPage from './pages/post/BoardPage'; // 게시판 목록 페이지
+import PostDetailPage from './pages/post/PostDetailPage'; // 게시판 상세 페이지
+import PostFormPage from './pages/post/PostFormPage'; // 게시판 작성/수정 페이지
+
+
+// Admin components
+import AdminLayout from './components/admin/AdminLayout';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import UserManagementPage from './pages/admin/UserManagementPage';
+import PostManagementPage from './pages/admin/PostManagementPage';
+
+
+import './App.css';
+
+// AuthContext와 연동된 AdminRoute
+const AdminRoute = () => {
+    const { userRole } = useAuth(); // AuthContext에서 사용자 정보 가져오기
+
+    // 사용자 정보가 없거나 role이 'ADMIN'이 아니면 로그인 페이지로 리디렉션
+    if (!userRole || userRole !== 'ADMIN') {
+        return <Navigate to="/login" replace />;
+    }
+
+    return <Outlet />; // 자식 라우트를 렌더링
+};
+
+
+function App() {
+    return (
+        <Routes>
+                <Route path="/" element={<MainLayout />}>
+                    <Route index element={<HomePage />} />
+                    <Route path="login" element={<LoginPage />} />
+                    <Route path="register" element={<RegisterPage />} />
+                    <Route path="profile" element={<ProfilePage />} />
+                    {/* Keeping other placeholders for now */}
+                    {/* ===== 🔽 Post 관련 라우트 추가 🔽 ===== */}
+                    {/*<Route path="board/:type" element={<BoardPage />} /> /!* 1. 목록 (missing, shelter) *!/*/}
+                    <Route path="board/:type" element={<BoardPage />} /> {/* 1. 목록 (missing, shelter) */}
+                    <Route path="posts/new" element={<PostFormPage />} /> {/* 2. 작성 */}
+                    <Route path="posts/:postId" element={<PostDetailPage />} /> {/* 4. 상세 */}
+                    <Route path="posts/:postId/edit" element={<PostFormPage />} /> {/* 5. 수정 */}
+                    <Route path="/find-pets" element={<SearchFilterPage />} />
+                </Route>
+
+            {/* Admin Routes */}
+            <Route path="/admin" element={<AdminRoute />}>
+                <Route element={<AdminLayout />}>
+                    <Route index element={<AdminDashboardPage />} />
+                    <Route path="users" element={<UserManagementPage />} />
+                    <Route path="posts" element={<PostManagementPage />} />
+                </Route>
+            </Route>
+        </Routes>
+
+    );
+}
+
+export default App;
+//========================
+-경로 : src/utils/statusUtils.js
+export const getDisplayStatusInfo = (postType, status) => {
+    if (status === 'COMPLETED') {
+        const text = postType === 'MISSING' ? '찾았어요!' : '가족 찾음!';
+        return {
+            displayText: text,
+            className: 'status-completed'
+        };
+    }
+
+    // status가 'ACTIVE'인 경우
+    const text = postType === 'MISSING' ? '찾는 중' : '보호 중';
+    return {
+        displayText: text,
+        className: 'status-active'
+    };
+};
+//========================
+- 경로 : src/pages/admin
+
+import React, { useEffect, useState } from 'react';
+import axiosInstance from '../../api/axiosInstance';
+import { useAuth } from '../../context/AuthContext';
+
+const AdminDashboardPage = () => {
+    const [stats, setStats] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const { userRole } = useAuth();
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                setLoading(true);
+                setError(null);
+                // API spec: GET /api/stats/dashboard
+                const response = await axiosInstance.get('/stats/dashboard');
+                setStats(response.data.data); // Assuming response structure { success: true, data: { ...stats... } }
+            } catch (err) {
+                console.error('Failed to fetch dashboard stats:', err);
+                setError('대시보드 통계를 불러오는 데 실패했습니다.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (userRole === 'ADMIN') {
+            fetchStats();
+        } else {
+            setError('관리자 권한이 필요합니다.');
+            setLoading(false);
+        }
+    }, [userRole]);
+
+    if (loading) {
+        return <div>로딩 중...</div>;
+    }
+
+    if (error) {
+        return <div>오류: {error}</div>;
+    }
+
+    return (
+        <div>
+            <h1>관리자 대시보드</h1>
+            {stats ? (
+                <div>
+                    <h2>통계 요약</h2>
+                    <p>총 게시글 수: {stats.totalPosts}</p>
+                    <p>실종 게시글 수: {stats.missingPosts}</p>
+                    <p>보호 게시글 수: {stats.shelterPosts}</p>
+                    <p>완료된 게시글 수: {stats.completedPosts}</p>
+                    <p>오늘 등록된 게시글 수: {stats.todayPosts}</p>
+
+                    <h3>최근 완료된 게시글</h3>
+                    {stats.recentCompletions && stats.recentCompletions.length > 0 ? (
+                        <ul>
+                            {stats.recentCompletions.map((completion) => (
+                                <li key={completion.postId}>
+                                    {completion.title} (완료일: {new Date(completion.completedAt).toLocaleDateString()})
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p>최근 완료된 게시글이 없습니다.</p>
+                    )}
+                </div>
+            ) : (
+                <p>통계 정보를 불러올 수 없습니다.</p>
+            )}
+        </div>
+    );
+};
+
+export default AdminDashboardPage;
+
+
+//========================
+
+import React, { useEffect, useState } from 'react';
+import axiosInstance from '../../api/axiosInstance';
+import { useAuth } from '../../context/AuthContext';
+
+const PostManagementPage = () => {
+    const [posts, setPosts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const { userRole } = useAuth();
+    const [selectedPostComments, setSelectedPostComments] = useState([]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+
+    const fetchPosts = async (page) => {
+        try {
+            setLoading(true);
+            const response = await axiosInstance.get('/admin/posts', {
+                params: {
+                    page: page,
+                    size: 10,
+                }
+            });
+            setPosts(response.data.data.content);
+            setTotalPages(response.data.data.totalPages);
+        } catch (err) {
+            console.error('Failed to fetch posts:', err);
+            setError('게시글 목록을 불러오는 데 실패했습니다.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (userRole === 'ADMIN') {
+            fetchPosts(page);
+        } else {
+            setError('관리자 권한이 필요합니다.');
+            setLoading(false);
+        }
+    }, [userRole, page]);
+
+    const handleDelete = async (postId) => {
+        if (window.confirm('정말로 이 게시글을 삭제하시겠습니까?')) {
+            try {
+                // Use the admin delete endpoint
+                await axiosInstance.delete(`/admin/posts/${postId}`);
+                alert('게시글이 성공적으로 삭제되었습니다.');
+                // Refresh the list after deletion
+                fetchPosts(page);
+            } catch (err) {
+                console.error('Failed to delete post:', err);
+                alert(`게시글 삭제 중 오류 발생: ${err.response?.data?.message || err.message}`);
+            }
+        }
+    };
+
+    const handleShowComments = async (postId) => {
+        try {
+            const response = await axiosInstance.get(`/posts/${postId}`);
+            if (Array.isArray(response.data.comments)) {
+                setSelectedPostComments(response.data.comments);
+            } else {
+                setSelectedPostComments([]); // Ensure it's an array even if comments are missing
+                console.warn("Comments data is not an array:", response.data.comments);
+            }
+            setIsModalOpen(true);
+        } catch (err) {
+            console.error('Failed to fetch comments:', err);
+            alert('댓글을 불러오는 데 실패했습니다.');
+        }
+    };
+
+    const handleDeleteComment = async (commentId) => {
+        if (window.confirm('정말로 이 댓글을 삭제하시겠습니까?')) {
+            try {
+                await axiosInstance.delete(`/admin/comments/${commentId}`);
+                alert('댓글이 성공적으로 삭제되었습니다.');
+                // Refresh comments after deletion
+                const newComments = selectedPostComments.filter(c => c.commentId !== commentId);
+                setSelectedPostComments(newComments);
+            } catch (err) {
+                console.error('Failed to delete comment:', err);
+                alert(`댓글 삭제 중 오류 발생: ${err.response?.data?.message || err.message}`);
+            }
+        }
+    };
+
+    const handlePageChange = (newPage) => {
+        if (newPage >= 0 && newPage < totalPages) {
+            setPage(newPage);
+        }
+    };
+
+    if (loading) {
+        return <div>로딩 중...</div>;
+    }
+
+    if (error) {
+        return <div>오류: {error}</div>;
+    }
+
+    return (
+        <div>
+            <h1>게시글 관리</h1>
+            {posts.length === 0 ? (
+                <p>등록된 게시글이 없습니다.</p>
+            ) : (
+                <table>
+                    <thead><tr><th>ID</th><th>제목</th><th>동물 이름</th><th>유형</th><th>상태</th><th>작성자</th><th>작성일</th><th>액션</th></tr></thead>
+                    <tbody>{posts.map((post) => (<tr key={post.id}><td>{post.postId}</td><td>{post.title}</td><td>{post.animalName}</td><td>{post.postType}</td><td>{post.status}</td><td>{post.author?.name || '알 수 없음'}</td><td>{new Date(post.createdAt).toLocaleDateString()}</td><td><button onClick={() => handleShowComments(post.id)}>댓글 보기</button><button onClick={() => handleDelete(post.id)}>삭제</button></td></tr>))}</tbody>
+                </table>
+            )}
+            <div>
+                <button onClick={() => handlePageChange(page - 1)} disabled={page === 0}>
+                    이전
+                </button>
+                <span>{page + 1} / {totalPages}</span>
+                <button onClick={() => handlePageChange(page + 1)} disabled={page === totalPages - 1}>
+                    다음
+                </button>
+            </div>
+
+            {isModalOpen && (
+                <div className={`modal ${isModalOpen ? 'active' : ''}`}>
+                    <div className="modal-content">
+                        <span className="close" onClick={() => setIsModalOpen(false)}>&times;</span>
+                        <h2>댓글 관리</h2>
+                        {selectedPostComments.length === 0 ? (
+                            <p>댓글이 없습니다.</p>
+                        ) : (
+                            <ul>
+                                {selectedPostComments.map(comment => (
+                                    <li key={comment.commentId}>
+                                        <p>{comment.content}</p>
+                                        <p>작성자: {comment.userName}</p>
+                                        <button onClick={() => handleDeleteComment(comment.commentId)}>삭제</button>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default PostManagementPage;
+
+
+//========================
+
+import React, { useEffect, useState } from 'react';
+import axiosInstance from '../../api/axiosInstance'; // Assuming axiosInstance is correctly configured with auth headers
+import { useAuth } from '../../context/AuthContext'; // To get the token if needed, though axiosInstance should handle it
+
+const UserManagementPage = () => {
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const { userRole } = useAuth(); // To ensure only ADMIN can access, though AdminRoute already handles this
+
+    useEffect(() => {
+        const fetchUsers = async () => {
+            try {
+                setLoading(true);
+                // The API spec says GET /api/admin/users, and axiosInstance should handle the token
+                const response = await axiosInstance.get('/admin/users');
+                setUsers(response.data.data); // Corrected: response.data.data is directly the list of users
+            } catch (err) {
+                console.error('Failed to fetch users:', err);
+                setError('사용자 목록을 불러오는 데 실패했습니다.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        // Only fetch if user is admin (AdminRoute already handles this, but good for defensive coding)
+        if (userRole === 'ADMIN') {
+            fetchUsers();
+        } else {
+            setError('관리자 권한이 필요합니다.');
+            setLoading(false);
+        }
+    }, [userRole]); // Re-fetch if userRole changes (though it shouldn't change often)
+
+    if (loading) {
+        return <div>로딩 중...</div>;
+    }
+
+    if (error) {
+        return <div>오류: {error}</div>;
+    }
+
+    return (
+        <div>
+            <h1>사용자 관리</h1>
+            {users.length === 0 ? (
+                <p>등록된 사용자가 없습니다.</p>
+            ) : (
+                <table>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>로그인 ID</th>
+                        <th>이름</th>
+                        <th>이메일</th>
+                        <th>역할</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {users.map((user) => (
+                        <tr key={user.userId}>
+                            <td>{user.userId}</td>
+                            <td>{user.loginId}</td>
+                            <td>{user.name}</td>
+                            <td>{user.email}</td>
+                            <td>{user.role}</td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            )}
+        </div>
+    );
+};
+
+export default UserManagementPage;
+
+
+//========================
+-src/pages/auth
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../../api/axiosInstance';
+import { useAuth } from '../../context/AuthContext';
+import './LoginPage.css';
+
+function LoginPage() {
+  const [loginId, setLoginId] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const { login } = useAuth();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(''); // Clear previous errors
+
+    try {
+      const response = await axiosInstance.post('/auth/login', { loginId, password });
+      if (response.data.success) {
+        console.log('Login successful:', response.data);
+        const { user, accessToken, refreshToken } = response.data.data;
+        login(user);
+        localStorage.setItem('accessToken', accessToken);
+        localStorage.setItem('refreshToken', refreshToken);
+        navigate('/'); // Redirect to home page or dashboard
+      } else {
+        setError(response.data.error.message || '로그인 실패');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err.response?.data?.error?.message || '서버 오류가 발생했습니다.');
+    }
+  };
+
+  return (
+    <div className="login-page">
+      <h2>로그인</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="loginId">아이디:</label>
+          <input
+            type="text"
+            id="loginId"
+            value={loginId}
+            onChange={(e) => setLoginId(e.target.value)}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label htmlFor="password">비밀번호:</label>
+          <input
+            type="password"
+            id="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+        </div>
+        {error && <p className="error-message">{error}</p>}
+        <button type="submit" className="btn btn-primary">로그인</button>
+
+      </form>
+      <p>계정이 없으신가요? <a href="/register">회원가입</a></p>
+    </div>
+  );
+}
+
+export default LoginPage;
+
+
+//========================
+-
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../../api/axiosInstance';
+import './RegisterPage.css';
+
+function RegisterPage() {
+  const [formData, setFormData] = useState({
+    loginId: '',
+    password: '',
+    passwordConfirm: '',
+    name: '',
+    phoneNumber: '',
+    email: '',
+    address: '',
+  });
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    const { id, value } = e.target;
+    setFormData((prevData) => ({
+      ...prevData,
+      [id]: value,
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(''); // Clear previous errors
+
+    // Validation
+    if (formData.password.length < 8) {
+      setError('비밀번호는 8자 이상이어야 합니다.');
+      return;
+    }
+    if (formData.password !== formData.passwordConfirm) {
+      setError('비밀번호가 일치하지 않습니다.');
+      return;
+    }
+
+    try {
+      // Exclude passwordConfirm from the data sent to the server
+      const { passwordConfirm, ...submissionData } = formData;
+      const response = await axiosInstance.post('/auth/signup', submissionData);
+
+      if (response.data.success) {
+        console.log('Registration successful:', response.data);
+        alert('회원가입이 완료되었습니다. 로그인 해주세요.');
+        navigate('/login'); // Redirect to login page
+      } else {
+        setError(response.data.error.message || '회원가입 실패');
+      }
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError(err.response?.data?.error?.message || '서버 오류가 발생했습니다.');
+    }
+  };
+
+  return (
+    <div className="register-page">
+      <h2>회원가입</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label htmlFor="loginId">아이디:</label>
+          <input type="text" id="loginId" value={formData.loginId} onChange={handleChange} required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="password">비밀번호 (8자 이상):</label>
+          <input type="password" id="password" value={formData.password} onChange={handleChange} required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="passwordConfirm">비밀번호 확인:</label>
+          <input type="password" id="passwordConfirm" value={formData.passwordConfirm} onChange={handleChange} required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="name">이름:</label>
+          <input type="text" id="name" value={formData.name} onChange={handleChange} required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="phoneNumber">전화번호:</label>
+          <input type="text" id="phoneNumber" value={formData.phoneNumber} onChange={handleChange} required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="email">이메일:</label>
+          <input type="email" id="email" value={formData.email} onChange={handleChange} required />
+        </div>
+        <div className="form-group">
+          <label htmlFor="address">주소:</label>
+          <input type="text" id="address" value={formData.address} onChange={handleChange} required />
+        </div>
+        {error && <p className="error-message">{error}</p>}
+        <button type="submit" className="btn btn-primary">회원가입</button>
+      </form>
+      <p>이미 계정이 있으신가요? <a href="/login">로그인</a></p>
+    </div>
+  );
+}
+
+export default RegisterPage;
+
+//========================
+-src/pages/post
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { getPosts } from '../../api/postApi';
+import PostCard from '../../components/post/PostCard';
+import Pagination from '../../components/common/Pagination';
+import { useAuth } from '../../context/AuthContext';
+import SearchFilterBox from '../../components/board/SearchFilterBox'; // 1. 검색 필터 박스 import
+
+const BoardPage = () => {
+    const { type } = useParams();
+    const { isLoggedIn } = useAuth();
+    const [posts, setPosts] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const [pageInfo, setPageInfo] = useState({
+        currentPage: 1,
+        totalPages: 1,
+    });
+
+    // 2. 검색 조건을 관리할 상태
+    const [searchCriteria, setSearchCriteria] = useState({});
+
+    const boardTitle = type === 'missing' ? '실종 동물 게시판' : '보호 동물 게시판';
+    const boardIcon = type === 'missing' ? 'fas fa-search' : 'fas fa-heart';
+
+    // 3. 검색 버튼을 눌렀을 때 실행될 함수
+    const handleSearch = (criteria) => {
+        setSearchCriteria(criteria);
+        setPageInfo(prev => ({ ...prev, currentPage: 1 })); // 검색 시에는 항상 1페이지부터 조회
+    };
+
+    // 4. 페이지 번호를 클릭했을 때 실행될 함수
+    const handlePageChange = (newPage) => {
+        setPageInfo(prev => ({ ...prev, currentPage: newPage }));
+    };
+
+    // 5. API를 호출하는 핵심 로직
+
+    useEffect(() => {
+        if (!type) {
+            return;
+        }
+        const fetchPosts = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+                const params = {
+                    title: searchCriteria.title,
+                    authorName: searchCriteria.author,
+                    location: searchCriteria.location,
+                    animalCategory: searchCriteria.animalType,
+                    animalBreed: searchCriteria.breed,
+                    gender: searchCriteria.gender,
+
+                    // 날짜 형식 변환
+                    lostTimeFrom: searchCriteria.lostDateFrom ? `${searchCriteria.lostDateFrom}T00:00:00` : null,
+                    lostTimeTo: searchCriteria.lostDateTo ? `${searchCriteria.lostDateTo}T23:59:59` : null,
+
+                    // 값(Value) 변환
+                    status: searchCriteria.isFound === true ? 'COMPLETED' :
+                        searchCriteria.isFound === false ? 'ACTIVE' : null,
+
+                    // 기본 페이징 및 타입 파라미터
+                    postType: (type || '').toUpperCase(),
+                    page: pageInfo.currentPage - 1,
+                    size: 9
+                };
+
+                // 내용이 없는 파라미터는 API 요청 URL에서 제외합니다.
+                Object.keys(params).forEach(key => {
+                    if (params[key] === null || params[key] === undefined || params[key] === '') {
+                        delete params[key];
+                    }
+                });
+
+                const response = await getPosts(params);
+
+                setPosts(response.data.dtoList);
+                setPageInfo({
+                    currentPage: response.data.page,
+                    totalPages: Math.ceil(response.data.total / response.data.size)
+                });
+            } catch (err) {
+                setError('게시글을 불러오는 데 실패했습니다.');
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchPosts();
+    }, [type, pageInfo.currentPage, searchCriteria]);
+
+    return (
+        <section className="board-section">
+            <div className="board-header">
+                <h2 className="board-title">
+                    <i className={boardIcon}></i> {boardTitle}
+                </h2>
+                <div className="board-controls">
+                    {/* 상세 검색 페이지 링크는 이제 필요 없으므로 주석 처리하거나 삭제 가능 */}
+                    {/* <Link to="/find-pets" className="btn btn-secondary">
+                        <i className="fas fa-search-plus"></i> 상세 검색하기
+                    </Link> */}
+                    {isLoggedIn && (
+                        <Link to={`/posts/new?type=${type}`} className="btn btn-primary">
+                            <i className="fas fa-plus"></i> 글쓰기
+                        </Link>
+                    )}
+                </div>
+            </div>
+
+            {/* 6. 검색 필터 박스 컴포넌트 렌더링 */}
+            <SearchFilterBox onSearch={handleSearch} />
+
+            {loading && <div>로딩 중...</div>}
+            {error && <div style={{ color: 'red' }}>{error}</div>}
+
+            {!loading && !error && (
+                <>
+                    <div className="posts-grid">
+                        {posts.length > 0 ? (
+                            posts.map(post => <PostCard key={post.postId} post={post} />)
+                        ) : (
+                            <p>조건에 맞는 게시글이 없습니다.</p>
+                        )}
+                    </div>
+
+                    <Pagination
+                        currentPage={pageInfo.currentPage}
+                        totalPages={pageInfo.totalPages}
+                        onPageChange={handlePageChange}
+                    />
+                </>
+            )}
+        </section>
+    );
+};
+
+export default BoardPage;
+//========================
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getPostById, deletePost, completePost } from '../../api/postApi';
+import { useAuth } from '../../context/AuthContext';
+import CommentComponent from '../../components/comment/CommentComponent';
+import KakaoMap from '../../components/location/KakaoMap';
+import './PostDetailPage.css';
+
+const PostDetailPage = () => {
+    const { postId } = useParams();
+    const navigate = useNavigate();
+    const { user, isLoggedIn } = useAuth();
+    const [post, setPost] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const fetchPost = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await getPostById(postId);
+            // API 응답 구조가 { success: true, data: {...} } 형태일 수 있으므로 .data를 추가
+            setPost(response.data);
+        } catch (err) {
+            setError("게시글을 불러오지 못했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (postId) {
+            fetchPost();
+        }
+    }, [postId]);
+
+    // ... (handleDelete, handleComplete 등 다른 함수들은 모두 그대로 유지됩니다) ...
+    const handleDelete = async () => {
+        if (window.confirm('정말로 이 게시글을 삭제하시겠습니까?')) {
+            try {
+                await deletePost(postId);
+                alert('게시글이 삭제되었습니다.');
+                navigate(`/board/${post.postType.toLowerCase()}`);
+            } catch (err) {
+                alert('게시글 삭제에 실패했습니다.');
+            }
+        }
+    };
+
+    const isMissingBoard = post?.postType === 'MISSING';
+    const completeButtonText = isMissingBoard ? "찾았어요!" : "가족 찾음!";
+    const confirmCompleteMessage = isMissingBoard
+        ? '이 동물을 "찾았어요!" 상태로 변경하시겠습니까? 이 작업은 되돌릴 수 없습니다.'
+        : '이 동물을 "가족 찾음!" 상태로 변경하시겠습니까? 이 작업은 되돌릴 수 없습니다.';
+    const alertCompleteMessage = isMissingBoard ? '"찾았어요!" 처리가 완료되었습니다.' : '"가족 찾음!" 처리가 완료되었습니다.';
+
+    const handleComplete = async () => {
+        if (window.confirm(confirmCompleteMessage)) {
+            try {
+                await completePost(postId);
+                alert(alertCompleteMessage);
+                fetchPost();
+            } catch (err) {
+                alert('상태 변경에 실패했습니다.');
+            }
+        }
+    };
+
+
+    if (loading) return <div>게시글을 불러오는 중...</div>;
+    if (error) return <div className="error-message">{error}</div>;
+    if (!post) return <div>해당 게시글이 없습니다.</div>;
+
+    const isAuthor = isLoggedIn && user?.userId === post.author.userId;
+
+    // ✅ [핵심 수정] 새로운 데이터 구조(post.images)에 맞게 이미지 URL 목록을 생성합니다.
+    const fullImageUrls = post.images?.map(img => `http://localhost:8080/upload/${img.imageUrl}`) || [];
+
+    const isCompleted = post.status === 'COMPLETED';
+    const statusText = isCompleted
+        ? (post.postType === 'MISSING' ? '찾았어요!' : '가족 찾음!')
+        : (post.postType === 'MISSING' ? '찾는 중' : '보호 중');
+    const statusClassName = isCompleted ? 'status-completed' : 'status-active';
+
+    return (
+        <section className="board-section">
+            <div className="post-detail">
+                {/* ... (Header 부분은 변경 없습니다) ... */}
+                <div className="post-detail-header">
+                    <div className={`status-badge ${statusClassName}`}>
+                        {statusText}
+                    </div>
+                    <h2 className="post-detail-title">{post.title}</h2>
+                    <div className="post-detail-meta">
+                        <span><i className="fas fa-user"></i> {post.author.name}</span>
+                        <span><i className="fas fa-clock"></i> {new Date(post.createdAt).toLocaleString()}</span>
+                    </div>
+                    {isAuthor && (
+                        <div className="post-actions">
+                            {!isCompleted && (
+                                <>
+                                    <Link to={`/posts/${postId}/edit`} className="btn btn-outline">수정</Link>
+                                    <button onClick={handleDelete} className="btn btn-danger">삭제</button>
+                                    <button onClick={handleComplete} className="btn btn-success">{completeButtonText}</button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="post-detail-content">
+                    <div className="post-image-gallery">
+                        {/* ✅ 이 부분은 이제 정상적으로 fullImageUrls 배열을 받아 이미지를 렌더링합니다. */}
+                        {fullImageUrls.length > 0 ? fullImageUrls.map((fullUrl, index) => (
+                            <img key={index} src={fullUrl} alt={`post image ${index}`} className="gallery-image" />
+                        )) : <div className="no-image-placeholder">등록된 이미지가 없습니다.</div>}
+                    </div>
+
+                    {/* ... (이하 동물 정보, 지도, 본문, 목록가기 버튼, 댓글 등은 변경 없습니다) ... */}
+                    <div className="animal-detail-info">
+                        <h3>동물 정보</h3>
+                        <div className="info-grid">
+                            <div className="info-item"><span className="info-label">이름</span><span className="info-value">{post.animalName || '-'}</span></div>
+                            <div className="info-item"><span className="info-label">나이</span><span className="info-value">{post.animalAge ? `${post.animalAge}세` : '-'}</span></div>
+                            <div className="info-item"><span className="info-label">동물 종류</span><span className="info-value">{post.animalCategory || '-'}</span></div>
+                            <div className="info-item"><span className="info-label">품종</span><span className="info-value">{post.animalBreed || '-'}</span></div>
+                            <div className="info-item"><span className="info-label">성별</span><span className="info-value">{post.gender || '-'}</span></div>
+                            <div className="info-item"><span className="info-label">{post.postType === 'MISSING' ? '실종 일시' : '발견 일시'}</span><span className="info-value">{post.lostTime ? new Date(post.lostTime).toLocaleString() : '-'}</span></div>
+                            <div className="info-item info-item--full-width"><span className="info-label">{post.postType === 'MISSING' ? '실종 장소' : '발견 장소'}</span><span className="info-value">{post.location || '-'}</span></div>
+                        </div>
+                    </div>
+                    <div className="map-container">
+                        <h3>{post.postType === 'MISSING' ? '실종 추정 위치' : '발견 위치'}</h3>
+                        <KakaoMap
+                            initialLocation={{ latitude: post.latitude, longitude: post.longitude }}
+                            isSelectable={false}
+                        />
+                    </div>
+                    <div className="post-main-content">
+                        <p style={{ whiteSpace: 'pre-wrap' }}>{post.content}</p>
+                    </div>
+                </div>
+
+                <div className="list-button-container">
+                    <Link to={`/board/${post.postType.toLowerCase()}`} className="btn-list">
+                        ← 목록가기
+                    </Link>
+                </div>
+
+                <CommentComponent postId={postId} isPostCompleted={isCompleted} />
+            </div>
+        </section>
+    );
+};
+
+export default PostDetailPage;
+//========================
+import React, { useState, useEffect , useRef } from 'react';
+import {useParams, useNavigate, useLocation} from 'react-router-dom';
+import { createPost, getPostById, updatePost } from '../../api/postApi';
+import ImageUpload from '../../components/post/ImageUpload';
+import './PostFormPage.css'; // CSS 파일 import
+import KakaoMap from '../../components/location/KakaoMap';
+
+
+
+const PostFormPage = () => {
+    const { postId } = useParams();
+    const isEditMode = Boolean(postId);
+    const navigate = useNavigate();
+
+    const mapRef = useRef(null); // ✅ 지도 인스턴스를 참조하기 위한 ref
+    const [mapSearchKeyword, setMapSearchKeyword] = useState(''); // ✅ 지도 검색어 상태
+
+    const { search } = useLocation(); // ✅ 현재 URL 정보를 가져옵니다.
+
+    // ✅ URL의 쿼리 스트링(?type=shelter 등)을 파싱합니다.
+    const queryParams = new URLSearchParams(search);
+    const typeFromQuery = queryParams.get('type'); // 'shelter' 또는 'missing' 값을 가져옵니다.
+
+    // ✅ URL에서 가져온 type 값에 따라 초기 게시판 종류를 결정합니다.
+    // type이 'shelter'면 'SHELTER'로, 그렇지 않으면(null이거나 'missing'이면) 'MISSING'으로 설정합니다.
+    const initialPostType = typeFromQuery === 'shelter' ? 'SHELTER' : 'MISSING';
+
+
+    const [formData, setFormData] = useState({
+        title: '',
+        content: '',
+        animalName: '',
+        animalAge: '',
+        animalCategory: '',
+        animalBreed: '',
+        gender: 'UNKNOWN',
+        lostTime: '',
+        postType: initialPostType,
+        location: '',
+        latitude: 0,
+        longitude: 0,
+    });
+
+    const [existingImages, setExistingImages] = useState([]);
+    const [newImageFiles, setNewImageFiles] = useState([]);
+    const [deletedImageIds, setDeletedImageIds] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (isEditMode) {
+            const fetchPostData = async () => {
+                setLoading(true);
+                try {
+                    const response = await getPostById(postId);
+                    const postData = response.data;
+
+                    // ✅ [문제 해결] 백엔드에서 받은 한글 성별을 프론트엔드 value(영문)로 변환합니다.
+                    const genderMapToValue = {
+                        "수컷": "MALE",
+                        "암컷": "FEMALE",
+                        "모름": "UNKNOWN"
+                    };
+                    const genderValue = genderMapToValue[postData.gender] || 'UNKNOWN';
+
+
+                    const formattedLostTime = postData.lostTime
+                        ? new Date(new Date(postData.lostTime).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16)
+                        : '';
+                    // ✅ 변환된 genderValue를 formData 상태에 저장합니다.
+                    setFormData({ ...postData, gender: genderValue, lostTime: formattedLostTime });
+
+                    if (postData.images) {
+                        const imagesWithRealIds = postData.images.map(img => ({
+                            id: img.imageId, // 가짜 id(index) 대신 실제 imageId 사용
+                            url: `http://localhost:8080/upload/${img.imageUrl}`
+                        }));
+                        setExistingImages(imagesWithRealIds);
+                    }
+
+                } catch (err) {
+                    setError('게시글 정보를 불러오는 데 실패했습니다.');
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchPostData();
+        }
+    }, [postId, isEditMode]);
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleNewFilesChange = (files) => {
+        setNewImageFiles(files);
+    };
+
+    const handleDeleteExistingImage = (imageIdToDelete) => {
+        setExistingImages(prev => prev.filter(img => img.id !== imageIdToDelete));
+        setDeletedImageIds(prev => [...prev, imageIdToDelete]);
+    };
+
+    // ✅ 지도에서 위치가 선택되었을 때 호출될 콜백 함수
+    const handleLocationSelect = (selectedLocation) => {
+        setFormData(prev => ({
+            ...prev,
+            location: selectedLocation.location,
+            latitude: selectedLocation.latitude,
+            longitude: selectedLocation.longitude,
+        }));
+    };
+
+    // ✅ 검색 버튼 클릭 시 지도 검색 실행
+    const handleMapSearch = () => {
+        if (mapRef.current) {
+            mapRef.current.searchPlace(mapSearchKeyword);
+        }
+    };
+
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError(null);
+        setLoading(true);
+
+        // ✅ 텍스트와 파일을 함께 보내기 위한 FormData 객체 생성
+        const apiFormData = new FormData();
+
+        // ✅ 입력된 텍스트 정보들을 JSON 형태로 변환
+        const requestDto = {
+            ...formData,
+            animalAge: parseInt(formData.animalAge) || 0,
+            deletedImageIds: isEditMode ? deletedImageIds : undefined,
+        };
+
+        apiFormData.append('requestDto',
+            new Blob([JSON.stringify(requestDto)],
+                { type: "application/json" }));
+
+        const imagePartName = isEditMode ? 'newImages' : 'images';
+        newImageFiles.forEach(file => apiFormData.append(imagePartName, file));
+        try {
+            if (isEditMode) {
+                await updatePost(postId, apiFormData);
+                alert('게시글이 성공적으로 수정되었습니다.');
+                navigate(`/posts/${postId}`);
+            } else {
+                await createPost(apiFormData);
+                alert('게시글이 성공적으로 등록되었습니다.');
+                navigate(`/board/${formData.postType.toLowerCase()}`);
+            }
+        } catch (err) {
+            setError('요청 처리 중 오류가 발생했습니다. 모든 필수 항목을 입력했는지 확인해주세요.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading && isEditMode) return <div>게시글 정보를 불러오는 중...</div>;
+
+    return (
+        <section className="form-section">
+            <div className="form-container">
+                <h2 className="form-title">{isEditMode ? '게시글 수정' : '게시글 작성'}</h2>
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label className="form-label">게시판 선택</label>
+                        <select name="postType" value={formData.postType} onChange={handleChange} className="form-select" disabled={isEditMode}>
+                            <option value="MISSING">가족을 찾아요 (실종)</option>
+                            <option value="SHELTER">주인을 기다려요 (보호)</option>
+                        </select>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">제목</label>
+                        <input type="text" name="title" value={formData.title} onChange={handleChange} className="form-input" required />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">사진 관리</label>
+                        {isEditMode && existingImages.length > 0 && (
+                            <>
+                                <p className="form-label-subtitle">기존 사진 (X를 눌러 삭제)</p>
+                                <div className="image-preview-container">
+                                    {existingImages.map((image) => (
+                                        <div key={image.id} className="image-preview-item">
+                                            <img src={image.url} alt={`기존 이미지 ${image.id}`} className="image-preview-img" />
+                                            <button type="button" onClick={() => handleDeleteExistingImage(image.id)} className="image-preview-delete-btn">X</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                        <label className="form-label-subtitle">새 사진 추가</label>
+                        <ImageUpload onFilesChange={handleNewFilesChange} />
+                    </div>
+
+                    <div className="form-grid-2-col">
+                        <div className="form-group">
+                            <label className="form-label">동물 이름</label>
+                            <input type="text" name="animalName" value={formData.animalName} onChange={handleChange} className="form-input" placeholder="예: 몽이" />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">나이</label>
+                            <input type="number" name="animalAge" value={formData.animalAge} onChange={handleChange} className="form-input" placeholder="숫자만 입력" />
+                        </div>
+                    </div>
+
+                    <div className="form-grid-3-col">
+                        <div className="form-group">
+                            <label className="form-label">동물 종류</label>
+                            <select name="animalCategory" value={formData.animalCategory} onChange={handleChange} className="form-select" required>
+                                <option value="">선택하세요</option>
+                                <option value="개">개</option>
+                                <option value="고양이">고양이</option>
+                                <option value="기타">기타</option>
+                            </select>
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">품종</label>
+                            <input type="text" name="animalBreed" value={formData.animalBreed} onChange={handleChange} className="form-input" placeholder="예: 말티즈" />
+                        </div>
+                        <div className="form-group">
+                            <label className="form-label">성별</label>
+                            <select name="gender" value={formData.gender} onChange={handleChange} className="form-select" required>
+                                <option value="UNKNOWN">모름</option>
+                                <option value="MALE">수컷</option>
+                                <option value="FEMALE">암컷</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">{formData.postType === 'MISSING' ? '실종' : '발견'} 일시</label>
+                        <input type="datetime-local" name="lostTime" value={formData.lostTime} onChange={handleChange} className="form-input" required />
+                    </div>
+
+
+                    {/* ===== 🔽 카카오맵 KAKAO MAP 위치 선택(지도) 필드 추가 🔽 ===== */}
+                    <div className="form-group">
+                        <label className="form-label">위치 선택</label>
+                        <div className="map-search-wrapper">
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="장소, 주소 검색"
+                                value={mapSearchKeyword}
+                                onChange={(e) => setMapSearchKeyword(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleMapSearch(); }}}
+                            />
+                            <button type="button" className="btn btn-outline" onClick={handleMapSearch}>검색</button>
+                        </div>
+                        <KakaoMap
+                            ref={mapRef}
+                            isSelectable={true}
+                            initialLocation={{ latitude: formData.latitude, longitude: formData.longitude }}
+                            onLocationSelect={handleLocationSelect}
+                        />
+                        <input
+                            type="text"
+                            name="location"
+                            value={formData.location}
+                            onChange={handleChange}
+                            className="form-input"
+                            placeholder="지도에서 선택된 주소"
+                            style={{marginTop: '1rem'}}
+                            readOnly
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label className="form-label">상세 내용</label>
+                        <textarea name="content" value={formData.content} onChange={handleChange} className="form-textarea" required></textarea>
+                    </div>
+
+                    {error && <div className="form-error-message">{error}</div>}
+
+                    <div className="form-actions">
+                        <button type="button" className="btn btn-outline" onClick={() => navigate(-1)}>취소</button>
+                        <button type="submit" className="btn btn-primary" disabled={loading}>
+                            {loading ? '처리 중...' : (isEditMode ? '수정하기' : '등록하기')}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    );
+};
+
+export default PostFormPage;
+
+//========================
+-src/pages/search_filter
+import React, { useState, useEffect } from 'react';
+import SearchFilterBox from '../../components/board/SearchFilterBox.jsx';
+import './SearchFilterPage.css';
+
+const SearchFilterPage = () => {
+    const [searchResults, setSearchResults] = useState({
+        content: [],
+        page: 0,
+        size: 20,
+        totalElements: 0,
+        totalPages: 0,
+        first: true,
+        last: true
+    });
+
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [currentCriteria, setCurrentCriteria] = useState({});
+
+    useEffect(() => {
+        handleSearch({});
+    }, []);
+
+    // UI criteria -> 백엔드 쿼리 파라미터로 변환
+    const toBackendParams = (criteria, page = 0) => {
+        const params = new URLSearchParams();
+
+        // 기본 페이징/정렬
+        params.append('page', String(page));
+        params.append('size', criteria.size || '20');
+        params.append('sortBy', criteria.sortBy || 'createdAt');
+        params.append('sortDir', criteria.sortDir || 'DESC');
+
+        // 제목
+        if (criteria.title) params.append('title', criteria.title);
+
+        // 동물 이름 (author 필드를 animalName으로 매핑)
+        if (criteria.author) {
+            params.append('animalName', criteria.author);
+        }
+
+        // 날짜 범위
+        if (criteria.lostDateFrom) params.append('lostTimeFrom', criteria.lostDateFrom);
+        if (criteria.lostDateTo) params.append('lostTimeTo', criteria.lostDateTo);
+
+        // 👇 [수정] cityProvince와 district를 합치는 로직 대신, location 키워드를 직접 사용
+        if (criteria.location) {
+            params.append('location', criteria.location);
+        }
+
+        // 축종/품종
+        if (criteria.animalType) params.append('animalCategory', criteria.animalType);
+        if (criteria.breed) params.append('animalBreed', criteria.breed);
+
+        // 상태 토글: isFound(true/false/null) -> status(COMPLETED/ACTIVE)
+        if (criteria.isFound === true) params.append('status', 'COMPLETED');
+        else if (criteria.isFound === false) params.append('status', 'ACTIVE');
+
+        return params;
+    };
+
+    const handleSearch = async (criteria, page = 0) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const searchParams = toBackendParams(criteria, page);
+            const response = await fetch(`/api/posts?${searchParams}`);
+            if (!response.ok) throw new Error('검색 요청이 실패했습니다.');
+
+            const data = await response.json();
+            setSearchResults(data);
+            setCurrentCriteria(criteria);
+        } catch (err) {
+            setError(err.message);
+            console.error('검색 오류:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePageChange = (newPage) => {
+        handleSearch(currentCriteria, newPage);
+    };
+
+    const handleFilterChange = (criteria) => {
+        setCurrentCriteria(criteria);
+    };
+
+    const toggleFoundStatus = async (postId) => {
+        try {
+            const response = await fetch(`/api/posts/${postId}/complete`, { method: 'PATCH' });
+            if (!response.ok) throw new Error('상태 변경에 실패했습니다.');
+
+            handleSearch(currentCriteria, searchResults.page);
+        } catch (err) {
+            console.error('상태 토글 오류:', err);
+            alert('상태 변경에 실패했습니다.');
+        }
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        return new Date(dateString).toLocaleDateString('ko-KR');
+    };
+
+    const pick = (post, ...keys) => {
+        for (const k of keys) {
+            const v = post[k];
+            if (v !== undefined && v !== null && v !== '') return v;
+        }
+        return undefined;
+    };
+
+    const getLocation = (post) => {
+        // [수정] 표시 로직도 단순하게 post.location을 우선적으로 사용하도록 변경
+        return pick(post, 'location') || '-';
+    };
+
+    const getAuthor = (post) => {
+        return post.author?.name || '익명';
+    };
+
+    const isFound = (post) => {
+        return post.status && String(post.status).toUpperCase() === 'COMPLETED';
+    };
+
+    return (
+        <div className="search-filter-page">
+            <div className="page-header">
+                <h1>분실 반려동물 찾기</h1>
+                <p>소중한 가족을 찾아주세요</p>
+            </div>
+
+            <SearchFilterBox onSearch={handleSearch} onFilterChange={handleFilterChange} />
+
+            <div className="search-results-section">
+                <div className="results-header">
+                    <div className="results-count">
+                        총 <span className="count-number">{searchResults.totalElements}</span>건의 검색 결과
+                    </div>
+                </div>
+
+                {error && <div className="error-message">⚠️ {error}</div>}
+
+                {loading ? (
+                    <div className="loading-container">
+                        <div className="loading-spinner"></div>
+                        <p>검색 중입니다...</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="results-grid">
+                            {searchResults.content.map((post) => {
+                                const found = isFound(post);
+                                return (
+                                    <div key={post.id} className={`result-card ${found ? 'found' : ''}`}>
+                                        <div className="card-header">
+                                            <h3 className="card-title">{post.title}</h3>
+                                            <div className={`status-badge ${found ? 'found' : 'searching'}`}>
+                                                {found ? '찾기완료' : '찾는중'}
+                                            </div>
+                                        </div>
+                                        <div className="card-content">
+                                            <div className="info-row">
+                                                <span className="info-label">분실지역</span>
+                                                <span className="info-value">{getLocation(post)}</span>
+                                            </div>
+                                            <div className="info-row">
+                                                <span className="info-label">작성자</span>
+                                                <span className="info-value">{getAuthor(post)}</span>
+                                            </div>
+                                            {/* 👇 [추가] 이 부분을 추가하여 formatDate 함수를 사용합니다. */}
+                                            <div className="info-row">
+                                                <span className="info-label">등록일</span>
+                                                <span className="info-value">{formatDate(post.createdAt || post.regDate)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="card-actions">
+                                            <button className="btn btn-detail">상세보기</button>
+                                            {!found && (
+                                                <button className="btn btn-toggle" onClick={() => toggleFoundStatus(post.id)}>
+                                                    완료로 변경
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {searchResults.content.length === 0 && !loading && (
+                            <div className="no-results">
+                                <h3>검색 결과가 없습니다</h3>
+                                <p>다른 검색 조건을 시도해보세요</p>
+                            </div>
+                        )}
+
+                        {searchResults.totalPages > 1 && (
+                            <div className="pagination">
+                                <button onClick={() => handlePageChange(0)} disabled={searchResults.first}>처음</button>
+                                <button onClick={() => handlePageChange(searchResults.page - 1)} disabled={searchResults.first}>이전</button>
+                                <span>{searchResults.page + 1} / {searchResults.totalPages}</span>
+                                <button onClick={() => handlePageChange(searchResults.page + 1)} disabled={searchResults.last}>다음</button>
+                                <button onClick={() => handlePageChange(searchResults.totalPages - 1)} disabled={searchResults.last}>마지막</button>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
+export default SearchFilterPage;
+
+//========================
+-src/pages/user/ProfilePage.jsx
+import React, { useState, useEffect } from 'react';
+import axiosInstance from '../../api/axiosInstance';
+import { useAuth } from '../../context/AuthContext';
+import { useNavigate, useLocation } from 'react-router-dom'; // Add useNavigate and useLocation
+import './ProfilePage.css';
+
+function ProfilePage() {
+    const { user, login } = useAuth(); // ✅ login 함수도 가져옵니다. // Get user from AuthContext
+  const navigate = useNavigate(); // Initialize useNavigate
+  const location = useLocation(); // Initialize useLocation
+  const [localUserInfo, setLocalUserInfo] = useState(user);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [editFormData, setEditFormData] = useState({
+    name: user?.name || '',
+    phoneNumber: user?.phoneNumber || '',
+    email: user?.email || '',
+    address: user?.address || '',
+  });
+  const [editSuccess, setEditSuccess] = useState(''); // Add editSuccess state
+  const [passwordChangeData, setPasswordChangeData] = useState({
+    currentPassword: '',
+    newPassword: '',
+  });
+  const [passwordChangeError, setPasswordChangeError] = useState('');
+  const [passwordChangeSuccess, setPasswordChangeSuccess] = useState('');
+
+  // Check for success message from navigation state
+  useEffect(() => {
+    if (location.state?.successMessage) {
+      setEditSuccess(location.state.successMessage);
+      // Clear the state after displaying to prevent it from showing again on refresh
+      // This might require clearing location.state or navigating without state
+      // For simplicity, we'll just setEditSuccess and let it clear on next interaction
+      // To clear the state from history, you might use navigate(location.pathname, { replace: true, state: {} });
+      // For now, we'll rely on the message being transient.
+    }
+  }, [location.state, setEditSuccess]); // Depend on location.state and setEditSuccess
+
+  // If user from context changes, update local state and form data
+  useEffect(() => {
+    if (user) {
+      setLocalUserInfo(user);
+      setEditFormData({
+        name: user.name,
+        phoneNumber: user.phoneNumber,
+        email: user.email,
+        address: user.address,
+      });
+    }
+  }, [user]);
+
+    // Fetch user info on component mount
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      setLoading(true);
+      try {
+        const response = await axiosInstance.get('/users/me');
+        if (response.data.success) {
+          setLocalUserInfo(response.data.data);
+          setEditFormData({
+            name: response.data.data.name,
+            phoneNumber: response.data.data.phoneNumber,
+            email: response.data.data.email,
+            address: response.data.data.address,
+          });
+        } else {
+          setError(response.data.error.message || '사용자 정보를 불러오는데 실패했습니다.');
+        }
+      } catch (err) {
+        console.error('Fetch user info error:', err);
+        setError(err.response?.data?.error?.message || '서버 오류가 발생했습니다.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserInfo();
+  }, []); // Empty dependency array means it runs once on mount
+
+  const handleEditChange = (e) => {
+    const { id, value } = e.target;
+    setEditFormData((prevData) => ({
+      ...prevData,
+      [id]: value,
+    }));
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const response = await axiosInstance.put('/users/me', editFormData);
+      if (response.data.success) {
+        alert('회원 정보가 성공적으로 수정되었습니다.');
+        setIsEditingProfile(false); // Corrected
+        // Re-fetch user info to update the displayed data (or update local state if App.jsx handles it)
+        // For now, re-fetch to ensure consistency with backend
+          const updatedUserResponse = await axiosInstance.get('/users/me');
+          if (updatedUserResponse.data.success) {
+              const updatedUser = updatedUserResponse.data.data;
+              // ✅ AuthContext의 login 함수를 호출하여 전역 user 상태를 업데이트합니다.
+              //    Header 등 다른 컴포넌트에도 변경사항이 즉시 반영됩니다.
+              login(updatedUser);
+          }
+      } else {
+          setError(response.data.error.message || '회원 정보 수정에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('Update user info error:', err);
+      setError(err.response?.data?.error?.message || '회원 정보 수정 중 서버 오류가 발생했습니다.');
+    }
+  };
+
+  const handlePasswordChange = (e) => {
+    const { id, value } = e.target;
+    setPasswordChangeData((prevData) => ({
+      ...prevData,
+      [id]: value,
+    }));
+  };
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    
+    setPasswordChangeError('');
+    setPasswordChangeSuccess('');
+
+    if (passwordChangeData.newPassword.length < 8) {
+      setPasswordChangeError('새 비밀번호는 8자 이상이어야 합니다.');
+      
+      return;
+    }
+
+    if (passwordChangeData.newPassword !== confirmNewPassword) {
+      setPasswordChangeError('새 비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+      
+      return;
+    }
+
+    try {
+      
+      const response = await axiosInstance.put('/users/me', {
+        passwordChange: passwordChangeData,
+      });
+      
+      if (response.data.success) {
+        setIsChangingPassword(false); // Hide the password change form
+        alert('비밀번호가 성공적으로 변경되었습니다.');
+        setPasswordChangeData({ currentPassword: '', newPassword: '' });
+        setConfirmNewPassword('');
+      } else {
+        // 백엔드가 success: false를 보낼 경우
+        setPasswordChangeError(response.data.message || '비밀번호 변경에 실패했습니다.');
+        
+      }
+    } catch (err) {
+      console.error("비밀번호 변경 오류:", err);
+      
+      if (err.response && err.response.data) {
+          // 백엔드에서 보낸 구체적인 오류 메시지 사용 (err.response.data.message)
+          setPasswordChangeError(err.response.data.message || "알 수 없는 오류가 발생했습니다.");
+      } else {
+          // 네트워크 오류 또는 예상치 못한 오류
+          setPasswordChangeError("비밀번호 변경 중 서버 오류가 발생했습니다.");
+      }
+    }
+  };
+
+  if (loading) return <div>로딩 중...</div>;
+  if (error) return <div className="error-message">{error}</div>;
+  if (!localUserInfo) return <div>사용자 정보를 찾을 수 없습니다.</div>;
+
+  return (
+    <div className="profile-page">
+      <h2>
+        {isEditingProfile ? '정보 수정' : isChangingPassword ? '비밀번호 변경' : '내 정보'}
+      </h2>
+      {editSuccess && <p className="success-message">{editSuccess}</p>}
+      {(!isEditingProfile && !isChangingPassword) && (
+        <div className="profile-display">
+          <div className="info-group">
+            <label>아이디:</label>
+            <div className="info-value">{localUserInfo.loginId}</div>
+          </div>
+          <div className="info-group">
+            <label>이름:</label>
+            <div className="info-value">{localUserInfo.name}</div>
+          </div>
+          <div className="info-group">
+            <label>전화번호:</label>
+            <div className="info-value">{localUserInfo.phoneNumber}</div>
+          </div>
+          <div className="info-group">
+            <label>이메일:</label>
+            <div className="info-value">{localUserInfo.email}</div>
+          </div>
+          <div className="info-group">
+            <label>주소:</label>
+            <div className="info-value">{localUserInfo.address}</div>
+          </div>
+          <div className="button-group">
+            <button onClick={() => { setIsEditingProfile(true); setIsChangingPassword(false); }} className="btn btn-primary">정보 수정</button>
+            <button onClick={() => { setIsChangingPassword(true); setIsEditingProfile(false); }} className="btn btn-secondary">비밀번호 변경</button>
+          </div>
+        </div>
+      )}
+
+      {isEditingProfile && (
+        <form onSubmit={handleEditSubmit} className="profile-form">
+          <div className="form-group">
+            <label htmlFor="name">이름:</label>
+            <input type="text" id="name" value={editFormData.name} onChange={handleEditChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="phoneNumber">전화번호:</label>
+            <input type="text" id="phoneNumber" value={editFormData.phoneNumber} onChange={handleEditChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="email">이메일:</label>
+            <input type="email" id="email" value={editFormData.email} onChange={handleEditChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="address">주소:</label>
+            <input type="text" id="address" value={editFormData.address} onChange={handleEditChange} required />
+          </div>
+          <div className="button-group">
+            <button type="submit" className="btn btn-primary">저장</button>
+            <button type="button" onClick={() => setIsEditingProfile(false)} className="btn btn-secondary">취소</button>
+          </div>
+        </form>
+      )}
+
+      {isChangingPassword && (
+        <form onSubmit={handlePasswordSubmit} className="profile-form">
+          <div className="form-group">
+            <label htmlFor="currentPassword">현재 비밀번호:</label>
+            <input type="password" id="currentPassword" value={passwordChangeData.currentPassword} onChange={handlePasswordChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="newPassword">새 비밀번호:</label>
+            <input type="password" id="newPassword" value={passwordChangeData.newPassword} onChange={handlePasswordChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="confirmNewPassword">새 비밀번호 확인:</label>
+            <input type="password" id="confirmNewPassword" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required />
+          </div>
+          {passwordChangeError && <p className="error-message">{passwordChangeError}</p>}
+          {passwordChangeSuccess && <p className="success-message">{passwordChangeSuccess}</p>}
+          <div className="button-group">
+            <button type="submit" className="btn btn-primary">비밀번호 변경</button>
+            <button type="button" onClick={() => setIsChangingPassword(false)} className="btn btn-secondary">취소</button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+export default ProfilePage;
+//========================
+-src/pages/HomePage.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const HomePage = () => {
+
+    const homeSectionStyle = {
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 'calc(100vh - 150px)',
+        textAlign: 'center',
+        color: 'white',
+        // 배경 이미지 URL을 추가
+        backgroundImage: `
+      linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), 
+      url('https://images.pexels.com/photos/1254140/pexels-photo-1254140.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1')
+    `,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+    };
+
+    return (
+        <section id="home" className="home-section" style={homeSectionStyle}>
+            <div className="home-content">
+                <h1 className="home-title">가족을 찾아요</h1>
+                <p className="home-subtitle">
+                    소중한 우리 가족이 길을 잃었나요?<br />
+                    찾아줘요 에서 도와드릴게요.
+                </p>
+                <div className="home-buttons">
+                    <Link to="/board/missing" className="home-btn">
+                        <i className="fas fa-search">가족을 찾아요</i>
+
+                        <small>실종된 우리 가족을 찾고 있어요</small>
+                    </Link>
+                    <Link to="/board/shelter" className="home-btn">
+                        <i className="fas fa-heart">주인을 기다려요</i>
+
+                        <small>주인을 찾아주고 있어요</small>
+                    </Link>
+                </div>
+            </div>
+        </section>
+    );
+};
+
+export default HomePage;
+
+//========================
+-src/layouts/MainLayout.jsx
+import React from 'react';
+import { Outlet } from 'react-router-dom';
+import Header from '../components/layout/Header.jsx';
+import Footer from '../components/layout/Footer';
+
+const MainLayout = () => {
+  return (
+    <div className="main-container">
+      <Header />
+      <main>
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  );
+};
+
+export default MainLayout;
+
+//========================
+-src/hooks/useFetchPosts.js
+import { useState, useEffect, useCallback } from 'react';
+import axiosInstance from '../api/axiosInstance';
+
+// SearchFilterBox의 상세 필터 조건들을 모두 받을 수 있도록 파라미터 변경
+const useFetchPosts = (filters, page) => {
+    const [posts, setPosts] = useState([]);
+    const [pagination, setPagination] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const fetchPosts = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            // SearchFilterBox에서 넘어온 상세 필터 조건들을 params로 사용
+            // 빈 값은 URL에서 제외하여 깔끔하게 만듭니다.
+            const cleanFilters = Object.fromEntries(
+                Object.entries(filters).filter(([_, v]) => v !== '' && v !== null)
+            );
+
+            const params = {
+                page: page, // Changed from page - 1
+                size: 9,
+                ...cleanFilters,
+            };
+
+            // [중요] 백엔드 API 엔드포인트가 변경될 수 있습니다.
+            // 백엔드 팀과 '/posts'가 맞는지, 아니면 '/find-pets' 같은 새로운 엔드포인트가 필요한지 확인해야 합니다.
+            // 우선은 기존 '/posts'를 사용한다고 가정합니다.
+            const response = await axiosInstance.get('/posts', { params });
+            const responseData = response.data; // Changed from response.data.data
+
+            setPosts(responseData.dtoList); // Changed from responseData.posts
+            setPagination(responseData); // Changed from responseData.pagination
+
+        } catch (err) {
+            console.error("게시글 목록을 불러오는 중 오류 발생:", err);
+            setError("게시글 목록을 불러오는데 실패했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    }, [filters, page]);
+
+    useEffect(() => {
+        fetchPosts();
+    }, [fetchPosts]);
+
+    return { posts, pagination, loading, error, refetch: fetchPosts };
+};
+
+export default useFetchPosts;
+//========================
+-src/context/AuthContext.jsx
+import React, { createContext, useState, useEffect, useContext } from 'react';
+
+export const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    const storedLoggedIn = localStorage.getItem('isLoggedIn');
+    return storedLoggedIn ? JSON.parse(storedLoggedIn) : false;
+  });
+  const [userRole, setUserRole] = useState(() => {
+    const storedUserRole = localStorage.getItem('userRole');
+    return storedUserRole ? storedUserRole : null;
+  });
+  // Add state for user object
+  const [user, setUser] = useState(() => {
+    const storedUser = localStorage.getItem('user');
+    return storedUser ? JSON.parse(storedUser) : null;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('isLoggedIn', JSON.stringify(isLoggedIn));
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    localStorage.setItem('userRole', userRole);
+  }, [userRole]);
+
+  // Effect for user object
+  useEffect(() => {
+    localStorage.setItem('user', JSON.stringify(user));
+  }, [user]);
+
+  // Modify login to accept user object
+  const login = (userData) => { // userData will be the full user object from backend
+    setIsLoggedIn(true);
+    setUserRole(userData.role);
+    setUser(userData); // Store the full user object
+  };
+
+  const logout = () => {
+    setIsLoggedIn(false);
+    setUserRole(null);
+    setUser(null); // Clear user object
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('user'); // Clear user object from localStorage
+      // 추가_CKM
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      //
+  };
+
+  return (
+    <AuthContext.Provider value={{ isLoggedIn, userRole, user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+    return useContext(AuthContext);
+};
+
+//========================
+-src/components/admin
+
+import React from 'react';
+import { Link, Outlet } from 'react-router-dom';
+
+const AdminLayout = () => {
+    return (
+        <div style={{ display: 'flex' }}>
+            <nav style={{ width: '200px', borderRight: '1px solid #ccc', padding: '20px' }}>
+                <h2>관리자 메뉴</h2>
+                <ul>
+                    <li><Link to="/admin">대시보드</Link></li>
+                    <li><Link to="/admin/users">사용자 관리</Link></li>
+                    <li><Link to="/admin/posts">게시글 관리</Link></li>
+                </ul>
+            </nav>
+            <main style={{ flex: 1, padding: '20px' }}>
+                <Outlet />
+            </main>
+        </div>
+    );
+};
+
+export default AdminLayout;
+
+//========================
+-src/components/board
+import React, { useState, useEffect } from 'react';
+import './SearchFilterBox.css';
+// ✅ 1. fetch 대신 중앙 관리되는 API 함수를 import 합니다.
+import { getFilterOptions, getBreedsByCategory } from '../../api/filterApi';
+
+const SearchFilterBox = ({ onSearch, onFilterChange }) => {
+    const [searchCriteria, setSearchCriteria] = useState({
+        title: '', author: '', lostDateFrom: '', lostDateTo: '',
+        location: '', animalType: '', breed: '', gender: '', isFound: null
+    });
+
+    const [filterOptions, setFilterOptions] = useState({
+        animalTypes: [], genders: [], breeds: []
+    });
+
+    // ✅ 2. 옵션 로딩 에러를 관리할 상태를 추가합니다.
+    const [optionsError, setOptionsError] = useState(null);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    useEffect(() => {
+        const loadFilterOptions = async () => {
+            setOptionsError(null); // 초기화
+            try {
+                // ✅ 3. 중앙 API 함수를 사용합니다.
+                const resp = await getFilterOptions();
+                const data = resp.data; // axios는 자동으로 json을 파싱하고 .data에 담아줍니다.
+
+                const animalCategories = data.animalCategories || data.animalTypes || [];
+                const normalizedTypes = animalCategories.map((t) =>
+                    typeof t === 'string' ? { value: t, label: t } : t
+                );
+                setFilterOptions(prev => ({
+                    ...prev,
+                    animalTypes: normalizedTypes,
+                    genders: data.genders || [],
+                }));
+            } catch (e) {
+                console.error('필터 옵션 로드 실패:', e);
+                // ✅ 4. 에러 발생 시 사용자에게 보여줄 메시지를 설정합니다.
+                setOptionsError('필터 옵션을 불러오는 데 실패했습니다.');
+            }
+        };
+        loadFilterOptions();
+    }, []);
+
+    useEffect(() => {
+        if (searchCriteria.animalType) {
+            const loadBreeds = async (animalType) => {
+                try {
+                    // ✅ 5. 중앙 API 함수를 사용합니다.
+                    const resp = await getBreedsByCategory(animalType);
+                    setFilterOptions(prev => ({ ...prev, breeds: resp.data || [] }));
+                } catch (e) {
+                    console.error('품종 목록 로드 실패:', e);
+                    setFilterOptions(prev => ({ ...prev, breeds: [] }));
+                }
+            };
+            loadBreeds(searchCriteria.animalType);
+            setSearchCriteria(prev => ({ ...prev, breed: '' }));
+        }
+    }, [searchCriteria.animalType]);
+
+    const handleInputChange = (field, value) => {
+        const newCriteria = { ...searchCriteria, [field]: value };
+        setSearchCriteria(newCriteria);
+        onFilterChange && onFilterChange(newCriteria);
+    };
+
+    const handleSearch = () => {
+        onSearch && onSearch(searchCriteria);
+    };
+
+    const handleReset = () => {
+        const resetCriteria = {
+            title: '', author: '', lostDateFrom: '', lostDateTo: '',
+            location: '', animalType: '', breed: '', gender: '', isFound: null
+        };
+        setSearchCriteria(resetCriteria);
+        onFilterChange && onFilterChange(resetCriteria);
+        onSearch && onSearch(resetCriteria);
+    };
+
+    const toggleFoundStatus = (status) => {
+        const newStatus = searchCriteria.isFound === status ? null : status;
+        handleInputChange('isFound', newStatus);
+    };
+
+    return (
+        <div className="search-filter-container">
+            {/* ... (상단 검색창 부분은 동일) ... */}
+            <div className="search-main-row">
+                <div className="search-input-group">
+                    <input
+                        type="text"
+                        placeholder="제목으로 검색..."
+                        value={searchCriteria.title}
+                        onChange={(e) => handleInputChange('title', e.target.value)}
+                        className="search-input"
+                    />
+                    <input
+                        type="text"
+                        placeholder="작성자로 검색..."
+                        value={searchCriteria.author}
+                        onChange={(e) => handleInputChange('author', e.target.value)}
+                        className="search-input"
+                    />
+                </div>
+                <div className="search-buttons">
+                    <button className="btn btn-filter" onClick={() => setIsExpanded(!isExpanded)}>
+                        <span className="filter-icon">⚙</span>
+                        필터 {isExpanded ? '접기' : '펼치기'}
+                    </button>
+                    <button className="btn btn-search" onClick={handleSearch}>
+                        <span className="search-icon">🔍</span>
+                        검색
+                    </button>
+                </div>
+            </div>
+
+            {isExpanded && (
+                <div className="filter-expanded-section">
+                    {/* ✅ 6. 에러 발생 시 메시지를 보여줍니다. */}
+                    {optionsError && <div className="error-message" style={{gridColumn: '1 / -1'}}>{optionsError}</div>}
+
+                    {/* ... (나머지 필터 UI 부분은 동일) ... */}
+                    <div className="filter-row">
+                        <div className="filter-group">
+                            <label>분실날짜</label>
+                            <div className="date-range">
+                                <input type="date" value={searchCriteria.lostDateFrom} onChange={(e) => handleInputChange('lostDateFrom', e.target.value)} className="date-input" />
+                                <span className="date-separator">~</span>
+                                <input type="date" value={searchCriteria.lostDateTo} onChange={(e) => handleInputChange('lostDateTo', e.target.value)} className="date-input" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="filter-row">
+                        <div className="filter-group" style={{ flexGrow: 1 }}>
+                            <label>분실지역 검색</label>
+                            <input
+                                type="text"
+                                placeholder="지역 키워드 입력 (예: 부산진구)"
+                                value={searchCriteria.location}
+                                onChange={(e) => handleInputChange('location', e.target.value)}
+                                className="search-input"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="filter-row">
+                        <div className="filter-group">
+                            <label>축종</label>
+                            <select value={searchCriteria.animalType} onChange={(e) => handleInputChange('animalType', e.target.value)} className="select-input">
+                                <option value="">전체</option>
+                                {filterOptions.animalTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                            </select>
+                        </div>
+                        <div className="filter-group">
+                            <label>품종</label>
+                            <select value={searchCriteria.breed} onChange={(e) => handleInputChange('breed', e.target.value)} className="select-input" disabled={!searchCriteria.animalType}>
+                                <option value="">전체</option>
+                                {filterOptions.breeds.map((breed) => <option key={breed} value={breed}>{breed}</option>)}
+                            </select>
+                        </div>
+                        <div className="filter-group">
+                            <label>성별</label>
+                            <select value={searchCriteria.gender} onChange={(e) => handleInputChange('gender', e.target.value)} className="select-input">
+                                <option value="">전체</option>
+                                {filterOptions.genders.map((gender) => <option key={gender.value} value={gender.value}>{gender.label}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="filter-row">
+                        <div className="status-toggle-group">
+                            <label>상태</label>
+                            <div className="toggle-buttons">
+                                <button className={`toggle-btn ${searchCriteria.isFound === null ? 'active' : ''}`} onClick={() => toggleFoundStatus(null)}>전체</button>
+                                <button className={`toggle-btn ${searchCriteria.isFound === false ? 'active' : ''}`} onClick={() => toggleFoundStatus(false)}>찾는중</button>
+                                <button className={`toggle-btn ${searchCriteria.isFound === true ? 'active' : ''}`} onClick={() => toggleFoundStatus(true)}>찾기완료</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="filter-actions">
+                        <button className="btn btn-reset" onClick={handleReset}>초기화</button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default SearchFilterBox;
+//========================
+-src/components/comment
+import { useEffect, useState, useCallback } from "react";
+import axiosInstance from "../../api/axiosInstance";
+import { useAuth } from "../../context/AuthContext";
+import './CommentComponent.css';
+
+const CommentComponent = ({ postId, isPostCompleted }) => {
+    const [comments, setComments] = useState([]);
+    const [newComment, setNewComment] = useState("");
+    const [imageFile, setImageFile] = useState(null);
+    const [editingCommentId, setEditingCommentId] = useState(null);
+    const [editingContent, setEditingContent] = useState("");
+    const { user } = useAuth();
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+
+    // 페이징 관련 상태
+    const [page, setPage] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+
+    const fetchComments = useCallback(async (currentPage) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await axiosInstance.get(`/posts/${postId}/comments?page=${currentPage}&size=10`);
+            setComments(response.data.content);
+            setTotalPages(response.data.totalPages);
+        } catch (error) {
+            console.error("댓글을 불러오는 중 오류가 발생했습니다.", error);
+            setError("댓글을 불러오지 못했습니다.");
+        } finally {
+            setLoading(false);
+        }
+    }, [postId]);
+
+    // page 또는 postId가 변경될 때마다 댓글을 다시 불러옴
+    useEffect(() => {
+        // postId가 변경되면 page를 0으로 리셋
+        setPage(0);
+    }, [postId]);
+
+    useEffect(() => {
+        fetchComments(page);
+    }, [page, fetchComments]);
+
+
+    // 페이지 번호 클릭 핸들러
+    const handlePageChange = (newPage) => {
+        if (newPage >= 0 && newPage < totalPages) {
+            setPage(newPage);
+        }
+    };
+
+    // 댓글 작성 핸들러
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData();
+        const commentDTO = { content: newComment, postId: postId };
+        formData.append("commentDTO", new Blob([JSON.stringify(commentDTO)], { type: "application/json" }));
+        if (imageFile) {
+            formData.append("imageFile", imageFile);
+        }
+        try {
+            await axiosInstance.post(`/posts/${postId}/comments`, formData);
+
+            // ✅✅✅ 수정된 부분 ✅✅✅
+            // 새 댓글 작성 후에는 0페이지(첫 페이지)를 다시 불러와서
+            // 최신 상태를 반영하고 화면도 첫 페이지로 이동시킵니다.
+            if (page === 0) {
+                // 이미 첫 페이지를 보고 있었다면 바로 데이터를 다시 불러옴
+                fetchComments(0);
+            } else {
+                // 다른 페이지를 보고 있었다면 페이지 상태를 0으로 변경
+                // (useEffect에 의해 자동으로 0페이지 데이터가 로드됨)
+                setPage(0);
+            }
+
+            setNewComment("");
+            setImageFile(null);
+            if (e.target.imageFile) e.target.imageFile.value = "";
+        } catch (error) {
+            console.error("댓글 작성 중 오류가 발생했습니다.", error);
+            alert("댓글 작성에 실패했습니다.");
+        }
+    };
+
+    // 댓글 삭제 핸들러
+    const handleDelete = async (commentId) => {
+        if (window.confirm("정말로 이 댓글을 삭제하시겠습니까?")) {
+            try {
+                await axiosInstance.delete(`/comments/${commentId}`);
+                // 댓글 삭제 후 현재 페이지를 다시 불러옴
+                fetchComments(page);
+            } catch (error) {
+                console.error("댓글 삭제 중 오류가 발생했습니다.", error);
+                alert("댓글 삭제에 실패했습니다.");
+            }
+        }
+    };
+
+    // 댓글 수정 핸들러
+    const handleUpdateSubmit = async (e, commentId) => {
+        e.preventDefault();
+        const formData = new FormData();
+        const commentDTO = { content: editingContent };
+        formData.append("commentDTO", new Blob([JSON.stringify(commentDTO)], { type: "application/json" }));
+        try {
+            await axiosInstance.put(`/comments/${commentId}`, formData);
+            // 댓글 수정 후 현재 페이지를 다시 불러옴
+            fetchComments(page);
+            setEditingCommentId(null);
+            setEditingContent("");
+        } catch (error) {
+            console.error("댓글 수정 중 오류가 발생했습니다.", error);
+            alert("댓글 수정에 실패했습니다.");
+        }
+    };
+
+    // 페이지 번호 목록을 렌더링하는 컴포넌트
+    const Pagination = () => {
+        if (totalPages <= 1) return null;
+
+        const pageNumbers = [];
+        for (let i = 0; i < totalPages; i++) {
+            pageNumbers.push(i);
+        }
+
+        return (
+            <nav className="pagination-container">
+                <button
+                    onClick={() => handlePageChange(page - 1)}
+                    disabled={page === 0}
+                    className="pagination-button"
+                >
+                    이전
+                </button>
+                {pageNumbers.map(number => (
+                    <button
+                        key={number}
+                        onClick={() => handlePageChange(number)}
+                        className={`pagination-button ${page === number ? 'active' : ''}`}
+                    >
+                        {number + 1}
+                    </button>
+                ))}
+                <button
+                    onClick={() => handlePageChange(page + 1)}
+                    disabled={page === totalPages - 1}
+                    className="pagination-button"
+                >
+                    다음
+                </button>
+            </nav>
+        );
+    };
+
+    return (
+        <div className="comment-container">
+            {isPostCompleted ? (
+                <div className="comment-form-disabled" style={{ padding: '20px', backgroundColor: '#f1f1f1', textAlign: 'center', borderRadius: '8px' }}>
+                    <p>찾기 완료된 게시글에는 댓글을 작성할 수 없습니다.</p>
+                </div>
+            ) : (
+                <form onSubmit={handleSubmit} className="comment-form">
+                    <textarea
+                        className="comment-textarea"
+                        placeholder="댓글을 입력하세요..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        required
+                    ></textarea>
+                    <div className="comment-form-actions">
+                        <input
+                            type="file"
+                            name="imageFile"
+                            onChange={(e) => setImageFile(e.target.files[0])}
+                            accept="image/*"
+                        />
+                        <button type="submit" className="comment-submit-btn">등록</button>
+                    </div>
+                </form>
+            )}
+
+            <h3 className="comment-title" style={{ marginTop: '40px' }}>댓글 목록</h3>
+
+            {loading ? (
+                <div>댓글을 불러오는 중...</div>
+            ) : error ? (
+                <div style={{ color: 'red' }}>{error}</div>
+            ) : comments.length > 0 ? (
+                <ul className="comment-list">
+                    {comments.map((comment) => (
+                        <li key={comment.commentId} className="comment-item">
+                            {editingCommentId === comment.commentId ? (
+                                <form onSubmit={(e) => handleUpdateSubmit(e, comment.commentId)}>
+                                    <textarea
+                                        className="comment-textarea"
+                                        value={editingContent}
+                                        onChange={(e) => setEditingContent(e.target.value)}
+                                        required
+                                    />
+                                    <button type="submit">저장</button>
+                                    <button type="button" onClick={() => setEditingCommentId(null)}>취소</button>
+                                </form>
+                            ) : (
+                                <div>
+                                    <div className="comment-author">
+                                        <strong>{comment.userName} ({comment.loginId})</strong>
+                                    </div>
+                                    <p className="comment-content">{comment.content}</p>
+                                    {comment.imageUrl && (
+                                        <img
+                                            src={`http://localhost:8080/upload/${comment.imageUrl}`}
+                                            alt="댓글 이미지"
+                                            className="comment-image"
+                                            style={{ maxWidth: "200px" }}
+                                        />
+                                    )}
+                                    <div className="comment-date">
+                                        {new Date(comment.createdAt).toLocaleString()}
+                                    </div>
+                                    {user && user.userId === comment.userId && (
+                                        <div className="comment-actions">
+                                            <button onClick={() => {
+                                                setEditingCommentId(comment.commentId);
+                                                setEditingContent(comment.content);
+                                            }}>수정</button>
+                                            <button onClick={() => handleDelete(comment.commentId)}>삭제</button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <p>아직 댓글이 없습니다.</p>
+            )}
+
+            <Pagination />
+        </div>
+    );
+};
+
+export default CommentComponent;
+
+//========================
+-src/components/common
+import React from 'react';
+import './Pagination.css';
+
+const Pagination = ({ currentPage, totalPages, onPageChange }) => {
+    const pageNumbers = [];
+    const maxPageButtons = 5; // 한 번에 보여줄 최대 페이지 버튼 수
+    let startPage, endPage;
+
+    if (totalPages <= maxPageButtons) {
+        startPage = 1;
+        endPage = totalPages;
+    } else {
+        const halfPages = Math.floor(maxPageButtons / 2);
+        if (currentPage <= halfPages) {
+            startPage = 1;
+            endPage = maxPageButtons;
+        } else if (currentPage + halfPages >= totalPages) {
+            startPage = totalPages - maxPageButtons + 1;
+            endPage = totalPages;
+        } else {
+            startPage = currentPage - halfPages;
+            endPage = currentPage + halfPages;
+        }
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        pageNumbers.push(i);
+    }
+
+    if (totalPages === 0) return null;
+
+    return (
+        <nav className="pagination-nav">
+            <ul className="pagination">
+                <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                    <button className="page-link" onClick={() => onPageChange(currentPage - 1)}>&laquo;</button>
+                </li>
+                {pageNumbers.map(number => (
+                    <li key={number} className={`page-item ${currentPage === number ? 'active' : ''}`}>
+                        <button onClick={() => onPageChange(number)} className="page-link">
+                            {number}
+                        </button>
+                    </li>
+                ))}
+                <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                    <button className="page-link" onClick={() => onPageChange(currentPage + 1)}>&raquo;</button>
+                </li>
+            </ul>
+        </nav>
+    );
+};
+
+export default Pagination;
+//========================
+-src/components/layout
+import React from 'react';
+
+const Footer = () => {
+  return (
+    <footer style={{ textAlign: 'center', padding: '2rem 0', color: 'white', marginTop: 'auto' }}>
+      <p>&copy; 2025 FindMyPet. All Rights Reserved.</p>
+    </footer>
+  );
+};
+
+export default Footer;
+
+//========================
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+
+const Header = () => {
+  const navigate = useNavigate();
+  const { isLoggedIn, user, logout } = useAuth(); // Use isLoggedIn and user
+
+  const handleLogout = () => {
+    logout();
+    navigate('/'); // Redirect to home page after logout
+  };
+
+  return (
+    <header className="header">
+      <div className="header-container">
+        <Link to="/" className="logo">
+          <i className="fas fa-paw"></i>
+          찾아줘요
+        </Link>
+        <nav className="nav-buttons">
+          {isLoggedIn ? (
+            <>
+              <span className="user-name">환영합니다, {user?.name}님!</span>
+              <Link to="/profile" className="btn btn-outline">
+                <i className="fas fa-user"></i>
+                마이페이지
+              </Link>
+              <button onClick={handleLogout} className="btn btn-primary">
+                <i className="fas fa-sign-out-alt"></i>
+                로그아웃
+              </button>
+            </>
+          ) : (
+            <>
+              <Link to="/login" className="btn btn-outline">
+                <i className="fas fa-sign-in-alt"></i>
+                로그인
+              </Link>
+              <Link to="/register" className="btn btn-primary">
+                <i className="fas fa-user-plus"></i>
+                회원가입
+              </Link>
+            </>
+          )}
+        </nav>
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+
+
+//========================
+-src/components/location
+// src/components/KakaoMap.jsx
+
+import React, { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
+
+const KakaoMap = forwardRef(({ isSelectable = false, initialLocation, onLocationSelect }, ref) => {
+    const mapContainer = useRef(null);
+    const mapInstance = useRef(null);
+    const markerInstance = useRef(null);
+    const placesService = useRef(null);
+
+    useEffect(() => {
+        if (!window.kakao || !window.kakao.maps) {
+            console.error("카카오 지도 API가 로드되지 않았습니다.");
+            return;
+        }
+
+        const { kakao } = window;
+        const initialLat = initialLocation?.latitude || 37.566826;
+        const initialLng = initialLocation?.longitude || 126.9786567;
+        const initialPos = new kakao.maps.LatLng(initialLat, initialLng);
+
+        const options = { center: initialPos, level: 3 };
+        const map = new kakao.maps.Map(mapContainer.current, options);
+        mapInstance.current = map;
+
+        const marker = new kakao.maps.Marker({ position: initialPos, map: map });
+        markerInstance.current = marker;
+
+        placesService.current = new kakao.maps.services.Places();
+
+        if (isSelectable) {
+            const geocoder = new kakao.maps.services.Geocoder();
+            kakao.maps.event.addListener(map, 'click', (mouseEvent) => {
+                const latlng = mouseEvent.latLng;
+                markerInstance.current.setPosition(latlng);
+
+                geocoder.coord2Address(latlng.getLng(), latlng.getLat(), (result, status) => {
+                    if (status === kakao.maps.services.Status.OK) {
+                        const address = result[0]?.road_address?.address_name || result[0]?.address?.address_name;
+                        if (onLocationSelect) {
+                            onLocationSelect({
+                                location: address,
+                                latitude: latlng.getLat(),
+                                longitude: latlng.getLng(),
+                            });
+                        }
+                    }
+                });
+            });
+        }
+    }, []); // 초기 렌더링 시 한 번만 실행되도록 의존성 배열을 비움
+
+    useImperativeHandle(ref, () => ({
+        searchPlace: (keyword) => {
+            if (!placesService.current || !keyword.trim()) return;
+
+            placesService.current.keywordSearch(keyword, (data, status) => {
+                if (status === kakao.maps.services.Status.OK) {
+                    const firstPlace = data[0];
+                    const newPos = new kakao.maps.LatLng(firstPlace.y, firstPlace.x);
+
+                    mapInstance.current.setCenter(newPos);
+
+                    if (onLocationSelect) {
+                        onLocationSelect({
+                            location: firstPlace.place_name,
+                            latitude: parseFloat(firstPlace.y),
+                            longitude: parseFloat(firstPlace.x),
+                        });
+                    }
+                } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+                    alert('검색 결과가 존재하지 않습니다.');
+                } else {
+                    alert('검색 중 오류가 발생했습니다.');
+                }
+            });
+        }
+    }));
+
+    return (
+        <div ref={mapContainer} style={{ height: '300px', width: '100%', borderRadius: '15px', border: '2px solid #e0e0e0' }}></div>
+    );
+});
+
+export default KakaoMap;
+//========================
+// src/components/LocationBoard.jsx
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import LocationPostCard from './LocationPostCard.jsx';
+
+const API_BASE_URL = 'http://localhost:8080/api/locations';
+
+const LocationBoard = ({ onShowPostForm }) => {
+    const [posts, setPosts] = useState([]);
+
+    const fetchLocations = async () => {
+        try {
+            // 1. 로컬 스토리지에서 토큰을 가져옵니다.
+            const token = localStorage.getItem('accessToken');
+            if (!token) {
+                console.error("로그인 토큰이 없어 위치 목록을 불러올 수 없습니다.");
+                // 필요하다면 로그인 페이지로 보내는 로직 추가
+                return;
+            }
+
+            // 2. GET 요청 시 headers에 Authorization을 추가합니다.
+            const response = await axios.get(API_BASE_URL, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            setPosts(response.data);
+        } catch (error) {
+            console.error("위치 목록을 불러오는 데 실패했습니다:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchLocations();
+    }, []);
+
+    return (
+        <section id="board" className="board-section">
+            <div className="board-header">
+                <h2 className="board-title">
+                    <i className="fas fa-map"></i> 위치 목록
+                </h2>
+                <div className="board-controls">
+                    <button className="btn btn-primary" onClick={onShowPostForm}>
+                        <i className="fas fa-plus"></i> 위치 등록
+                    </button>
+                </div>
+            </div>
+            <div className="posts-grid">
+                {posts.length > 0 ? (
+                    posts.map(post => (
+                        // [수정] 백엔드 DTO의 고유 ID인 locationId를 key로 사용
+                        <LocationPostCard key={post.locationId} post={post} />
+                    ))
+                ) : (
+                    <p>등록된 위치가 없습니다. 첫 번째 위치를 등록해보세요!</p>
+                )}
+            </div>
+        </section>
+    );
+};
+
+export default LocationBoard;
+
+//========================
+// src/components/LocationPostCard.jsx
+
+import React from 'react';
+
+const LocationPostCard = ({ post }) => {
+    // 날짜 형식을 'YYYY. MM. DD'로 변환하는 함수
+    const formatDate = (dateString) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('ko-KR');
+    };
+
+    return (
+        <div className="post-card">
+            <div className="post-image">
+                <i className="fas fa-map-marker-alt"></i>
+            </div>
+            <div className="post-content">
+                <h3 className="post-title">{post.location}</h3>
+                <p className="post-meta">위도: {post.latitude.toFixed(4)}, 경도: {post.longitude.toFixed(4)}</p>
+                <div className="post-date">
+                    <i className="fas fa-calendar"></i>
+                    {/* [수정] 현재 날짜 대신, 백엔드에서 받은 등록 날짜(regDate)를 표시 */}
+                    {formatDate(post.regDate || post.createdDate)}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default LocationPostCard;
+
+//========================
+// src/components/LocationPostForm.jsx
+
+import React, { useState, useRef } from 'react';
+import axios from 'axios';
+import KakaoMap from './KakaoMap';
+
+const API_BASE_URL = 'http://localhost:8080/api/locations';
+
+const LocationPostForm = ({ onCancel, onSubmitSuccess }) => {
+    const [formData, setFormData] = useState({
+        location: '',
+        latitude: 37.566826,  // 기본 위도 (서울시청)
+        longitude: 126.9786567, // 기본 경도 (서울시청)
+    });
+    const mapRef = useRef(null);
+
+    // KakaoMap 컴포넌트에서 위치가 선택/검색될 때 호출될 함수
+    const handleLocationSelect = (selectedLocation) => {
+        setFormData(prev => ({
+            ...prev,
+            location: selectedLocation.location,
+            latitude: selectedLocation.latitude,
+            longitude: selectedLocation.longitude,
+        }));
+    };
+
+    // 검색 버튼 클릭 핸들러
+    const handleSearchClick = () => {
+        const searchInput = document.querySelector('input[name="search"]');
+        if (searchInput && mapRef.current) {
+            mapRef.current.searchPlace(searchInput.value);
+        }
+    };
+
+    // 위치명 입력 필드 변경 핸들러
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    // 폼 제출 핸들러
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            alert('로그인이 필요합니다.');
+            return;
+        }
+
+        try {
+            // [수정] 비어있던 데이터를 formData로 채워서 전송
+            await axios.post(API_BASE_URL, formData, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            alert('위치 등록 성공!');
+            onSubmitSuccess(); // 부모에게 성공 사실을 알림
+        } catch (error) {
+            console.error('위치 등록에 실패했습니다:', error);
+            alert('위치 등록에 실패했습니다.');
+        }
+    };
+
+    return (
+        <section id="postForm" className="form-section">
+            <div className="form-container">
+                <h2 className="form-title">위치 등록</h2>
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label className="form-label">위치명</label>
+                        <input type="text" name="locationName" className="form-input" placeholder="지도에서 선택하거나 직접 입력하세요" value={formData.location} onChange={handleChange}/>
+                    </div>
+                    <div className="form-group">
+                        <label className="form-label">위치 검색 및 선택</label>
+                        <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
+                            <input type="text" name="search" className="form-input" placeholder="검색할 장소명을 입력하세요" />
+                            <button type="button" className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handleSearchClick}>검색</button>
+                        </div>
+                        <KakaoMap ref={mapRef} isSelectable={true} initialLocation={formData} onLocationSelect={handleLocationSelect}/>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
+                        <button type="button" className="btn btn-outline" onClick={onCancel}>취소</button>
+                        <button type="submit" className="btn btn-primary">등록하기</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    );
+};
+
+export default LocationPostForm;
+
+//========================
+// src/pages/MapTestPage.jsx
+
+import React, {useState} from 'react';
+import LocationBoard from './LocationBoard.jsx';
+import LocationPostForm from './LocationPostForm';
+
+const MapTestPage = () => {
+    // 게시판을 보여줄지, 등록 폼을 보여줄지 결정하는 상태
+    const [isFormVisible, setIsFormVisible] = useState(false);
+
+    // 폼 제출 성공 후, 게시판을 강제로 새로고침하기 위한 상태
+    const [refreshKey, setRefreshKey] = useState(0);
+
+    // LocationBoard에서 '위치 등록' 버튼을 눌렀을 때 호출될 함수
+    const handleShowForm = () => {
+        setIsFormVisible(true);
+    };
+
+    // LocationPostForm에서 '취소' 버튼을 눌렀을 때 호출될 함수
+    const handleCancelForm = () => {
+        setIsFormVisible(false);
+    };
+
+    // LocationPostForm에서 제출에 '성공'했을 때 호출될 함수
+    const handleSubmitSuccess = () => {
+        setIsFormVisible(false); // 폼 숨기기
+        setRefreshKey(prevKey => prevKey + 1); // 게시판 새로고침 트리거
+    };
+
+    return (
+        <div style={{padding: '2rem'}}>
+            {isFormVisible ? (
+                // isFormVisible이 true이면, 등록 폼을 렌더링
+                <LocationPostForm
+                    onCancel={handleCancelForm}
+                    onSubmitSuccess={handleSubmitSuccess}
+                />
+            ) : (
+                // isFormVisible이 false이면, 게시판을 렌더링
+                <LocationBoard
+                    key={refreshKey} // 이 key가 변경될 때마다 LocationBoard는 새로 데이터를 불러옴
+                    onShowPostForm={handleShowForm}
+                />
+            )}
+        </div>
+    );
+};
+
+export default MapTestPage;
+
+//========================
+-src/components/post
+import React, { useState } from 'react';
+
+const ImageUpload = ({ onFilesChange }) => {
+    const [previews, setPreviews] = useState([]);
+    const [files, setFiles] = useState([]);
+
+    const handleFileChange = (event) => {
+        const selectedFiles = Array.from(event.target.files);
+        if (selectedFiles.length === 0) return;
+
+        const newFiles = [...files, ...selectedFiles].slice(0, 5); // 최대 5개
+        setFiles(newFiles);
+        onFilesChange(newFiles); // 부모 컴포넌트로 파일 목록 전달
+
+        const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+        setPreviews(newPreviews);
+    };
+
+    const removeImage = (index) => {
+        const newFiles = files.filter((_, i) => i !== index);
+        setFiles(newFiles);
+        onFilesChange(newFiles);
+
+        const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+        setPreviews(newPreviews);
+    };
+
+    return (
+        <div>
+            <div className="image-upload">
+                <label htmlFor="image-input" style={{ cursor: 'pointer', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                    <i className="fas fa-cloud-upload-alt"></i>
+                    <p>사진을 클릭해서 업로드하세요</p>
+                    <small>최대 5장까지 업로드 가능</small>
+                </label>
+                <input
+                    id="image-input"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                />
+            </div>
+            <div className="image-preview-container" style={{ display: 'flex', gap: '10px', marginTop: '1rem', flexWrap: 'wrap' }}>
+                {previews.map((src, index) => (
+                    <div key={index} style={{ position: 'relative' }}>
+                        <img src={src} alt={`preview ${index}`} style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '10px' }} />
+                        <button
+                            type="button"
+                            onClick={() => removeImage(index)}
+                            style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(0,0,0,0.5)', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width: '20px', height: '20px' }}
+                        >X</button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+export default ImageUpload;
+//========================
+import React from 'react';
+import { Link } from 'react-router-dom';
+import './PostCard.css';
+
+const PostCard = ({ post }) => {
+    const isCompleted = post.status === 'COMPLETED';
+    const typeText = post.postType === 'MISSING' ? '실종' : '보호';
+    const thumbnailUrl = post.thumbnailUrl
+        ? `http://localhost:8080/upload/${post.thumbnailUrl}`
+        : null;
+
+    const getStatusBadge = () => {
+        if (isCompleted) {
+            return <div className="status-badge status-completed">가족 찾음!</div>;
+        }
+        return <div className="status-badge status-active">{post.postType === 'MISSING' ? '찾는 중' : '보호 중'}</div>;
+    };
+
+    // ✅ 추가된 정보 변수 정의
+    const lostDate = post.lostTime ? new Date(post.lostTime).toLocaleDateString() : '날짜 미상';
+    const genderText = post.gender === 'MALE' ? '수컷' : post.gender === 'FEMALE' ? '암컷' : '성별 모름';
+    const breedText = post.animalBreed || '품종 모름';
+    const locationText = post.location || '지역 정보 없음';
+
+
+    return (
+        <Link to={`/posts/${post.postId}`} className="post-card">
+            <div className="post-image" style={{ backgroundImage: `url(${thumbnailUrl})`, backgroundColor: '#e0e0e0' }}>
+                {!thumbnailUrl && <i className="fas fa-image"></i>}
+                {getStatusBadge()}
+            </div>
+            <div className="post-content">
+                <h3 className="post-title">{post.title}</h3>
+                <div className="post-meta">
+                    <div className="animal-info">
+                        <strong>{post.animalName || '이름 모름'}</strong>
+                        <span>{typeText} · {post.author.name}</span>
+                    </div>
+                </div>
+                {/* ✅ 추가된 정보 필드 */}
+                <div className="post-details">
+                    <p>
+                        <i className="fas fa-calendar-alt"></i>&nbsp;
+                        **날짜:** {lostDate}
+                    </p>
+                    <p>
+                        <i className="fas fa-map-marker-alt"></i>&nbsp;
+                        **지역:** {locationText}
+                    </p>
+                    <p>
+                        <i className="fas fa-paw"></i>&nbsp;
+                        **품종:** {breedText}
+                    </p>
+                    <p>
+                        <i className="fas fa-venus-mars"></i>&nbsp;
+                        **성별:** {genderText}
+                    </p>
+                </div>
+            </div>
+        </Link>
+    );
+};
+
+export default PostCard;
+//========================
+-src/api
+import axios from 'axios';
+
+// 1. axios 인스턴스 생성
+const axiosInstance = axios.create({
+    baseURL: 'http://localhost:8080/api', // 백엔드 API 서버 주소
+    timeout: 5000, // 요청 타임아웃 5초
+});
+
+// 2. 요청 인터셉터(Request Interceptor) 추가
+axiosInstance.interceptors.request.use(
+    (config) => {
+        // API 요청을 보내기 직전에 실행되는 로직
+
+        // localStorage에서 'accessToken'을 가져옵니다.
+        const token = localStorage.getItem('accessToken');
+
+        // 토큰이 존재하면, 모든 요청 헤더에 Authorization 헤더를 추가합니다.
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+
+        return config;
+    },
+    (error) => {
+        // 요청 에러 처리
+        return Promise.reject(error);
+    }
+);
+
+// Response Interceptor
+axiosInstance.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const originalRequest = error.config;
+        // If the error is 401 Unauthorized and it's not a retry attempt yet
+        if (error.response.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true; // Mark as retry attempt
+
+            try {
+                const refreshToken = localStorage.getItem('refreshToken');
+                if (!refreshToken) {
+                    // No refresh token, redirect to login
+                    window.location.href = '/login';
+                    return Promise.reject(error);
+                }
+
+                // Call backend to refresh token
+                // The backend endpoint is /api/auth/refresh and expects { refreshToken: "..." }
+                const response = await axios.post('http://localhost:8080/api/auth/refresh', { refreshToken: refreshToken });
+                const newAccessToken = response.data.data.accessToken; // Assuming response structure { success: true, data: { accessToken: "..." } }
+
+                // Update tokens in localStorage
+                localStorage.setItem('accessToken', newAccessToken);
+                // Note: The backend's refreshAccessToken currently returns only newAccessToken, not a new refreshToken.
+                // If the backend also returned a new refresh token, we would update it here:
+                // localStorage.setItem('refreshToken', newRefreshToken);
+
+                // Update the original request's header with the new token
+                originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+
+                // Retry the original request
+                return axiosInstance(originalRequest);
+
+            } catch (refreshError) {
+                console.error('Token refresh failed:', refreshError);
+                // Clear tokens and redirect to login on refresh failure
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('isLoggedIn');
+                localStorage.removeItem('userRole');
+                localStorage.removeItem('user');
+                window.location.href = '/login';
+                return Promise.reject(refreshError);
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
+export default axiosInstance;
+//========================
+// src/api/filterApi.js
+
+import axiosInstance from './axiosInstance';
+
+/**
+ * 검색 필터 옵션(축종, 성별 등)을 조회하는 API
+ */
+export const getFilterOptions = () => {
+    // ✅ 수정: '/api'를 제거하고 그 뒷부분부터 작성합니다.
+    return axiosInstance.get('/find-pets/filter-options');
+};
+
+/**
+ * 특정 축종에 해당하는 품종 목록을 조회하는 API
+ * @param {string} animalCategory - 축종 (예: '개')
+ */
+export const getBreedsByCategory = (animalCategory) => {
+    // ✅ 수정: '/api'를 제거하고 그 뒷부분부터 작성합니다.
+    return axiosInstance.get(`/find-pets/breeds`, {
+        params: { animalCategory }
+    });
+};
+
+//========================
+import axiosInstance from './axiosInstance';
+
+/**
+ * 게시글 목록 조회 API
+ * @param {object} params - { page, size, type, ... }
+ */
+export const getPosts = (params) => {
+    return axiosInstance.get('/posts', { params });
+};
+
+/**
+ * 게시글 상세 조회 API
+ * @param {number} postId - 게시글 ID
+ */
+export const getPostById = (postId) => {
+    return axiosInstance.get(`/posts/${postId}`);
+};
+
+/**
+ * 게시글 생성 API
+ * @param {FormData} formData - requestDto와 이미지 파일들을 포함
+ */
+export const createPost = (formData) => {
+    return axiosInstance.post('/posts', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+};
+
+/**
+ * 게시글 수정 API
+ * @param {number} postId - 수정할 게시글 ID
+ * @param {FormData} formData - requestDto와 새로운 이미지 파일들을 포함
+ */
+export const updatePost = (postId, formData) => {
+    return axiosInstance.put(`/posts/${postId}`, formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+};
+
+/**
+ * 게시글 삭제 API
+ * @param {number} postId - 삭제할 게시글 ID
+ */
+export const deletePost = (postId) => {
+    return axiosInstance.delete(`/posts/${postId}`);
+};
+
+/**
+ * 게시글 찾기 완료 처리 API
+ * @param {number} postId - 완료 처리할 게시글 ID
+ */
+export const completePost = (postId) => {
+    return axiosInstance.put(`/posts/${postId}/complete`);
+};
+
+//========================
+이상 React 프론트엔드 관련 모든 파일이야. 
+
+앞서 보여준 백엔드 코드와 연관되어서 메모리에 잘 기억해줘.
+
+두 관계를 연결해서 Post와 관련된 포트폴리오를 작성할건데,
+
+기능구현화면(홈페이지), 해당 기능구현화면과 관련된 프론트엔드,백엔드 코드를(코드리뷰) 캡쳐해서 붙일거야.
+코드리뷰는 프론트엔드에서 -> 백엔드 -> 프론트엔드에 표시 순서로 붙일거야.
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
+//========================
+-
+
